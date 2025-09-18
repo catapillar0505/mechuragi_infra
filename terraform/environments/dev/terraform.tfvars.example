@@ -14,3 +14,12 @@ vpc_cidr = "10.0.0.0/16"
 # EC2 설정
 instance_type = "t3.micro"
 key_pair_name = "mechuragi-dev-key"
+
+# SES 설정
+ses_domain = ""  # 도메인 사용 시 입력 (예: "yourdomain.com")
+ses_from_email = "noreply@yourdomain.com"
+
+# Bedrock 설정 (기본값 사용 가능)
+bedrock_chat_model = "anthropic.claude-3-haiku-20240307-v1:0"
+bedrock_smart_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+bedrock_embedding_model = "amazon.titan-embed-text-v1"

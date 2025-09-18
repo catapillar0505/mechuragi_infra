@@ -58,3 +58,36 @@ module "s3" {
   project_name = var.project_name
   environment  = var.environment
 }
+
+# CloudFront 모듈 호출
+module "cloudfront" {
+  source = "../../modules/cloudfront"
+  
+  project_name           = var.project_name
+  environment            = var.environment
+  s3_bucket_name         = module.s3.s3_bucket_name
+  s3_bucket_domain_name  = module.s3.s3_bucket_domain_name
+  s3_bucket_arn          = module.s3.s3_bucket_arn
+}
+
+# SES 모듈 호출
+module "ses" {
+  source = "../../modules/ses"
+  
+  project_name = var.project_name
+  environment  = var.environment
+  aws_region   = var.aws_region
+  domain_name  = var.ses_domain
+  from_email   = var.ses_from_email
+}
+
+# Bedrock 모듈 호출
+module "bedrock" {
+  source = "../../modules/bedrock"
+  
+  project_name       = var.project_name
+  environment        = var.environment
+  chat_model_id      = var.bedrock_chat_model
+  smart_model_id     = var.bedrock_smart_model
+  embedding_model_id = var.bedrock_embedding_model
+}

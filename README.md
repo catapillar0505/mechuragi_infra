@@ -17,7 +17,10 @@ mechuragi-infra/
 │       ├── vpc/                        # VPC 및 네트워크 구성
 │       ├── security/                   # 보안 그룹 설정
 │       ├── compute/                    # EC2 인스턴스 설정
-│       └── s3/                         # S3 버킷 설정
+│       ├── s3/                         # S3 버킷 설정
+│       ├── cloudfront/                 # CloudFront CDN 배포
+│       ├── ses/                        # SES 이메일 서비스
+│       └── bedrock/                    # Bedrock AI 서비스
 └── ansible/                            # 서버 구성 관리
     ├── README.md                       # Ansible 실행 가이드
     ├── ansible.cfg                     # Ansible 설정
@@ -31,6 +34,7 @@ mechuragi-infra/
         ├── setup-docker.yml           # Docker 환경 구성
         ├── setup-services.yml         # MySQL, Redis 서비스
         ├── setup-database.yml         # 데이터베이스 초기화
+        ├── setup-aws-services.yml     # AWS 서비스 연동 (서버 측)
         ├── verify-setup.yml           # 설정 검증
         └── setup-server.yml.backup    # 기존 통합 플레이북 백업
 ```
@@ -39,6 +43,7 @@ mechuragi-infra/
 
 ### AWS 리소스
 
+#### 핵심 인프라
 - **VPC**: 10.0.0.0/16 CIDR 블록
   - Public Subnet: 10.0.1.0/24 (ap-northeast-2a)
   - Private Subnet: 10.0.10.0/24 (ap-northeast-2b)
@@ -46,6 +51,11 @@ mechuragi-infra/
 - **보안 그룹**: HTTP(80), HTTPS(443), SSH(22), Spring Boot(8080), MySQL(3306), Redis(6379)
 - **S3**: 이미지 저장용 버킷 (CORS 설정, 버전 관리 활성화)
 - **Elastic IP**: 고정 공인 IP 할당
+
+#### AWS 외부 서비스
+- **CloudFront**: CDN 배포 (S3 연동, 캐시 정책 설정)
+- **SES**: 이메일 서비스 (템플릿, 설정 세트)
+- **Bedrock**: AI 서비스 (Claude 3, Titan 임베딩)
 
 ### 서버 소프트웨어
 
@@ -84,6 +94,11 @@ ansible-playbook -i inventory/hosts.yml playbooks/setup-system.yml
 ansible-playbook -i inventory/hosts.yml playbooks/setup-docker.yml
 ansible-playbook -i inventory/hosts.yml playbooks/setup-services.yml
 ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml
+
+# 3. AWS 서비스 연동 설정 (선택사항)
+ansible-playbook -i inventory/hosts.yml playbooks/setup-aws-services.yml
+
+# 4. 전체 설정 검증
 ansible-playbook -i inventory/hosts.yml playbooks/verify-setup.yml
 ```
 
@@ -109,9 +124,19 @@ key_pair_name = "your-actual-key-name"
 ansible_host: "YOUR_SERVER_IP"
 ansible_ssh_private_key_file: "~/.ssh/YOUR_KEY.pem"
 
+# 프로젝트 설정
+project_name: "mechuragi"
+environment: "dev"
+aws_region: "ap-northeast-2"
+
 # MySQL 설정
 mysql_root_password: "YOUR_MYSQL_PASSWORD"
 mysql_app_password: "YOUR_APP_PASSWORD"
+
+# AWS 서비스 설정 (선택사항)
+ses_from_email: "noreply@your-domain.com"
+s3_bucket_name: "mechuragi-dev-images"
+test_email: "test@example.com"
 
 # 기타 설정...
 ```
@@ -138,12 +163,16 @@ mysql_app_password: "YOUR_APP_PASSWORD"
 - EC2 공인 IP 주소
 - SSH 접속 명령어
 - S3 버킷 이름
+- CloudFront 배포 URL
+- SES 도메인 설정 상태
+- Bedrock IAM 역할 ARN
 
 ### Ansible 검증 결과:
 - 포트 리스닝 상태
 - 서비스 실행 상태
 - 시스템 리소스 사용량
 - Docker 컨테이너 목록
+- AWS 서비스 연결 테스트 결과
 
 ## 📋 전제 조건
 
@@ -152,14 +181,17 @@ mysql_app_password: "YOUR_APP_PASSWORD"
 - **Ansible** 2.9 이상
 - **AWS 키 페어** 생성 완료
 - **Python 3.8+** (대상 서버)
+- **boto3** 라이브러리 설치 (AWS 서비스 연동 시)
 
 ## 🎯 주요 특징
 
-- **모듈화된 아키텍처**: 책임별로 분리된 플레이북
+- **모듈화된 아키텍처**: 책임별로 분리된 Terraform 모듈과 Ansible 플레이북
 - **멱등성 보장**: 여러 번 실행해도 안전
 - **보안 중심**: 민감한 정보 분리 관리
 - **자동화된 검증**: 설치 후 상태 확인 자동화
 - **단계별 실행**: 필요한 부분만 선택적 실행 가능
+- **AWS 서비스 통합**: CloudFront, SES, Bedrock 등 주요 서비스 자동 설정
+- **AI 서비스 예제**: Bedrock을 활용한 추천 시스템 샘플 코드 제공
 
 ## 🔧 문제 해결
 
@@ -180,9 +212,11 @@ ansible all -m command -a "docker ps" --become -i inventory/hosts.yml
 
 ## 📚 추가 정보
 
-- Terraform 모듈 구조와 변수는 각 모듈의 `variables.tf` 참조
-- Ansible 플레이북 실행 방법은 `ansible/README.md` 참조
-- 보안 설정 및 변수 관리는 `.gitignore` 파일 참조
+- **Terraform 모듈**: 각 모듈의 `variables.tf` 파일에서 상세 설정 참조
+- **Ansible 플레이북**: `ansible/README.md`에서 단계별 실행 가이드 확인
+- **AWS 서비스 설정**: CloudFront, SES, Bedrock 모듈별 설정 방법
+- **보안 및 변수 관리**: `.gitignore` 파일과 변수 분리 규칙
+- **AI 서비스 예제**: `setup-aws-services.yml`로 생성되는 샘플 코드 활용
 
 ---
 

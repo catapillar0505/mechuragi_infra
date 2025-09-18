@@ -1,98 +1,50 @@
 ---
-- name: AWS Bedrock AI 서비스 연동 설정
-  hosts: localhost
-  connection: local
-  gather_facts: no
+- name: AWS 서비스 연동 설정 (서버 측)
+  hosts: mechuragi-server
+  become: yes
+  gather_facts: yes
 
   tasks:
-    - name: 1. AWS Bedrock 서비스 가용성 확인
-      amazon.aws.aws_config_service_link_role:
-        state: present
-      ignore_errors: yes
-      register: bedrock_availability
-
-    - name: 2. Bedrock 모델 액세스 권한 확인
-      uri:
-        url: "https://bedrock.{{ aws_region }}.amazonaws.com/foundation-models"
-        method: GET
-        headers:
-          Authorization: "AWS4-HMAC-SHA256 Credential={{ ansible_aws_access_key }}/{{ ansible_date_time.date }}/{{ aws_region }}/bedrock/aws4_request"
-      register: bedrock_models
-      ignore_errors: yes
-
-    - name: 3. IAM 역할 생성 - Bedrock 접근용
-      amazon.aws.iam_role:
-        name: "{{ project_name }}-{{ environment }}-bedrock-role"
-        assume_role_policy_document: |
-          {
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Effect": "Allow",
-                "Principal": {
-                  "Service": [
-                    "ec2.amazonaws.com",
-                    "lambda.amazonaws.com"
-                  ]
-                },
-                "Action": "sts:AssumeRole"
-              }
-            ]
-          }
-        managed_policies:
-          - "arn:aws:iam::aws:policy/AmazonBedrockReadOnlyAccess"
-        inline_policies:
-          BedrockInvokePolicy: |
-            {
-              "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Effect": "Allow",
-                  "Action": [
-                    "bedrock:InvokeModel",
-                    "bedrock:InvokeModelWithResponseStream",
-                    "bedrock:ListFoundationModels",
-                    "bedrock:GetFoundationModel"
-                  ],
-                  "Resource": [
-                    "arn:aws:bedrock:{{ aws_region }}::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
-                    "arn:aws:bedrock:{{ aws_region }}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0",
-                    "arn:aws:bedrock:{{ aws_region }}::foundation-model/amazon.titan-embed-text-v1"
-                  ]
-                }
-              ]
-            }
-        tags:
-          Name: "{{ project_name }}-{{ environment }}-bedrock-role"
-          Project: "{{ project_name }}"
-          Environment: "{{ environment }}"
-        state: present
-
-    - name: 4. EC2 인스턴스 프로파일 생성
-      amazon.aws.iam_instance_profile:
-        name: "{{ project_name }}-{{ environment }}-bedrock-profile"
-        roles:
-          - "{{ project_name }}-{{ environment }}-bedrock-role"
-        state: present
-
-    - name: 5. AWS CLI 및 SDK 설정 확인 (서버에서)
-      delegate_to: mechuragi-server
-      command: aws bedrock list-foundation-models --region {{ aws_region }}
-      register: bedrock_models_list
-      ignore_errors: yes
-      become: yes
-
-    - name: 6. Python Boto3 라이브러리 설치 (서버에서)
-      delegate_to: mechuragi-server
+    # Python 라이브러리 설치
+    - name: 1. Python AWS SDK 설치
       pip:
         name:
           - boto3
           - botocore
         state: present
-      become: yes
 
-    - name: 7. Bedrock 테스트 스크립트 생성
-      delegate_to: mechuragi-server
+    # Bedrock 설정 파일 및 스크립트
+    - name: 2. Bedrock 설정 파일 생성
+      copy:
+        content: |
+          # AWS Bedrock Configuration for {{ project_name }}
+          # Terraform에서 생성된 리소스 정보
+          
+          AWS_REGION={{ aws_region }}
+          
+          # Bedrock Model IDs (Parameter Store에서 가져오기)
+          BEDROCK_CHAT_MODEL=anthropic.claude-3-haiku-20240307-v1:0
+          BEDROCK_SMART_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
+          BEDROCK_EMBEDDING_MODEL=amazon.titan-embed-text-v1
+          
+          # Bedrock Endpoints
+          BEDROCK_ENDPOINT=https://bedrock.{{ aws_region }}.amazonaws.com
+          BEDROCK_RUNTIME_ENDPOINT=https://bedrock-runtime.{{ aws_region }}.amazonaws.com
+          
+          # Model Parameters
+          MAX_TOKENS=1000
+          TEMPERATURE=0.7
+          TOP_P=0.9
+          
+          # Rate Limiting
+          REQUESTS_PER_MINUTE=60
+          CONCURRENT_REQUESTS=5
+        dest: "{{ app_directory }}/bedrock_config.env"
+        owner: ec2-user
+        group: ec2-user
+        mode: '0644'
+
+    - name: 3. Bedrock 테스트 스크립트 생성
       copy:
         content: |
           #!/usr/bin/env python3
@@ -116,7 +68,7 @@
                   for model in models['modelSummaries'][:5]:  # 처음 5개만 표시
                       print(f"  - {model['modelName']}: {model['modelId']}")
                   
-                  # 2. Claude 3 Haiku 모델 테스트 (빠르고 저렴)
+                  # 2. Claude 3 Haiku 모델 테스트
                   model_id = "anthropic.claude-3-haiku-20240307-v1:0"
                   
                   test_prompt = {
@@ -142,26 +94,6 @@
                   
                   print(f"✅ AI 응답: {ai_response}")
                   
-                  # 3. Embedding 모델 테스트
-                  embed_model_id = "amazon.titan-embed-text-v1"
-                  
-                  embed_prompt = {
-                      "inputText": "메추라기 사용자 추천 시스템"
-                  }
-                  
-                  print(f"\n📊 Titan Embedding 모델 테스트...")
-                  embed_response = bedrock_runtime.invoke_model(
-                      modelId=embed_model_id,
-                      body=json.dumps(embed_prompt),
-                      contentType='application/json'
-                  )
-                  
-                  embed_body = json.loads(embed_response['body'].read())
-                  embedding_vector = embed_body['embedding']
-                  
-                  print(f"✅ 임베딩 벡터 차원: {len(embedding_vector)}")
-                  print(f"   벡터 샘플: {embedding_vector[:5]}")
-                  
                   print(f"\n🎉 Bedrock 연동 테스트 성공!")
                   print(f"   테스트 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                   
@@ -174,58 +106,12 @@
           if __name__ == "__main__":
               success = test_bedrock_connection()
               sys.exit(0 if success else 1)
-        dest: /home/ec2-user/app/test_bedrock.py
+        dest: "{{ app_directory }}/test_bedrock.py"
         mode: '0755'
         owner: ec2-user
         group: ec2-user
-      become: yes
 
-    - name: 8. Bedrock 설정 파일 생성 (애플리케이션용)
-      delegate_to: mechuragi-server
-      copy:
-        content: |
-          # AWS Bedrock Configuration for {{ project_name }}
-          # 이 파일을 애플리케이션의 설정에 포함하세요
-          
-          AWS_REGION={{ aws_region }}
-          
-          # Bedrock Model IDs
-          BEDROCK_CHAT_MODEL=anthropic.claude-3-haiku-20240307-v1:0
-          BEDROCK_SMART_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
-          BEDROCK_EMBEDDING_MODEL=amazon.titan-embed-text-v1
-          
-          # Bedrock Endpoints
-          BEDROCK_ENDPOINT=https://bedrock.{{ aws_region }}.amazonaws.com
-          BEDROCK_RUNTIME_ENDPOINT=https://bedrock-runtime.{{ aws_region }}.amazonaws.com
-          
-          # Model Parameters
-          MAX_TOKENS=1000
-          TEMPERATURE=0.7
-          TOP_P=0.9
-          
-          # Rate Limiting
-          REQUESTS_PER_MINUTE=60
-          CONCURRENT_REQUESTS=5
-        dest: /home/ec2-user/app/bedrock_config.env
-        owner: ec2-user
-        group: ec2-user
-        mode: '0644'
-      become: yes
-
-    - name: 9. Bedrock 연동 테스트 실행
-      delegate_to: mechuragi-server
-      command: python3 /home/ec2-user/app/test_bedrock.py
-      register: bedrock_test_result
-      become_user: ec2-user
-      ignore_errors: yes
-
-    - name: 10. Bedrock 테스트 결과 출력
-      debug:
-        msg: "{{ bedrock_test_result.stdout_lines }}"
-      when: bedrock_test_result.stdout_lines is defined
-
-    - name: 11. 애플리케이션용 AI 추천 예제 코드 생성
-      delegate_to: mechuragi-server
+    - name: 4. AI 추천 시스템 예제 코드 생성
       copy:
         content: |
           #!/usr/bin/env python3
@@ -350,37 +236,177 @@
               
               if embedding:
                   print(f"\n📊 임베딩 벡터 생성 완료: {len(embedding)} 차원")
-        dest: /home/ec2-user/app/ai_recommendation_example.py
+        dest: "{{ app_directory }}/ai_recommendation_example.py"
         mode: '0755'
         owner: ec2-user
         group: ec2-user
-      become: yes
 
-    - name: 12. Bedrock 설정 완료 메시지
+    # SES 설정 파일
+    - name: 5. SES 설정 파일 생성
+      copy:
+        content: |
+          # AWS SES Configuration for {{ project_name }}
+          # Terraform에서 생성된 리소스 정보
+          
+          AWS_REGION={{ aws_region }}
+          
+          # SES 설정 (Terraform 출력값 참조)
+          SES_FROM_EMAIL={{ ses_from_email | default('noreply@your-domain.com') }}
+          SES_CONFIGURATION_SET={{ project_name }}-{{ environment }}
+          
+          # 이메일 템플릿 이름
+          WELCOME_EMAIL_TEMPLATE={{ project_name }}-welcome-email
+          PASSWORD_RESET_TEMPLATE={{ project_name }}-password-reset
+          
+          # 이메일 발송 제한
+          MAX_SEND_RATE=14  # 초당 최대 발송 수 (SES 기본값)
+          MAX_24H_SEND=200  # 24시간 최대 발송 수 (SES 기본값)
+        dest: "{{ app_directory }}/ses_config.env"
+        owner: ec2-user
+        group: ec2-user
+        mode: '0644'
+
+    - name: 6. SES 이메일 발송 예제 스크립트
+      copy:
+        content: |
+          #!/usr/bin/env python3
+          import boto3
+          import json
+          from datetime import datetime
+          
+          def send_welcome_email(to_email, user_name):
+              """환영 이메일 발송"""
+              
+              ses_client = boto3.client('ses', region_name='{{ aws_region }}')
+              
+              try:
+                  response = ses_client.send_templated_email(
+                      Source='{{ ses_from_email | default("noreply@your-domain.com") }}',
+                      Destination={
+                          'ToAddresses': [to_email]
+                      },
+                      Template='{{ project_name }}-welcome-email',
+                      TemplateData=json.dumps({
+                          'name': user_name,
+                          'project_name': '{{ project_name }}',
+                          'app_url': 'https://your-app-url.com',
+                          'support_email': 'support@your-domain.com'
+                      }),
+                      ConfigurationSetName='{{ project_name }}-{{ environment }}'
+                  )
+                  
+                  print(f"✅ 환영 이메일 발송 성공: {response['ResponseMetadata']['RequestId']}")
+                  return True
+                  
+              except Exception as e:
+                  print(f"❌ 이메일 발송 실패: {str(e)}")
+                  return False
+          
+          def send_password_reset_email(to_email, user_name, reset_link):
+              """비밀번호 재설정 이메일 발송"""
+              
+              ses_client = boto3.client('ses', region_name='{{ aws_region }}')
+              
+              try:
+                  response = ses_client.send_templated_email(
+                      Source='{{ ses_from_email | default("noreply@your-domain.com") }}',
+                      Destination={
+                          'ToAddresses': [to_email]
+                      },
+                      Template='{{ project_name }}-password-reset',
+                      TemplateData=json.dumps({
+                          'name': user_name,
+                          'project_name': '{{ project_name }}',
+                          'reset_link': reset_link
+                      }),
+                      ConfigurationSetName='{{ project_name }}-{{ environment }}'
+                  )
+                  
+                  print(f"✅ 비밀번호 재설정 이메일 발송 성공: {response['ResponseMetadata']['RequestId']}")
+                  return True
+                  
+              except Exception as e:
+                  print(f"❌ 이메일 발송 실패: {str(e)}")
+                  return False
+          
+          # 테스트 실행
+          if __name__ == "__main__":
+              print("📧 SES 이메일 발송 테스트")
+              
+              # 환영 이메일 테스트
+              test_email = "{{ test_email | default('test@example.com') }}"
+              test_name = "테스트 사용자"
+              
+              print(f"\n1. 환영 이메일 발송 테스트 ({test_email})")
+              send_welcome_email(test_email, test_name)
+              
+              print(f"\n2. 비밀번호 재설정 이메일 발송 테스트 ({test_email})")
+              reset_link = "https://your-app-url.com/reset-password?token=test123"
+              send_password_reset_email(test_email, test_name, reset_link)
+        dest: "{{ app_directory }}/test_ses.py"
+        mode: '0755'
+        owner: ec2-user
+        group: ec2-user
+
+    # CloudFront 설정 파일
+    - name: 7. CloudFront 설정 파일 생성
+      copy:
+        content: |
+          # CloudFront Configuration for {{ project_name }}
+          # Terraform에서 생성된 리소스 정보
+          
+          # CloudFront 배포 정보 (terraform output에서 가져오기)
+          # CLOUDFRONT_DISTRIBUTION_ID=<terraform output>
+          # CLOUDFRONT_DOMAIN_NAME=<terraform output>
+          # CLOUDFRONT_URL=<terraform output>
+          
+          # S3 버킷 정보
+          S3_BUCKET_NAME={{ s3_bucket_name }}
+          
+          # CDN 설정
+          CACHE_BEHAVIORS=/images/*:604800,/api/*:0,/*:86400
+          CLOUDFRONT_REGIONS=US,CA,EU
+          
+          # 파일 업로드 설정
+          MAX_FILE_SIZE=10MB
+          ALLOWED_FILE_TYPES=jpg,jpeg,png,gif,webp,svg
+          
+          # CloudFront 무효화 설정
+          MAX_INVALIDATION_PATHS=1000
+          INVALIDATION_COST_THRESHOLD=1000
+        dest: "{{ app_directory }}/cloudfront_config.env"
+        owner: ec2-user
+        group: ec2-user
+        mode: '0644'
+
+    - name: 8. AWS 서비스 연결 테스트 실행
+      command: python3 "{{ app_directory }}/test_bedrock.py"
+      register: bedrock_test
+      become_user: ec2-user
+      ignore_errors: yes
+
+    - name: 9. Bedrock 테스트 결과 출력
+      debug:
+        msg: "{{ bedrock_test.stdout_lines }}"
+      when: bedrock_test.stdout_lines is defined
+
+    - name: 10. 설정 완료 메시지
       debug:
         msg:
-          - "🤖 AWS Bedrock 연동 설정 완료!"
-          - "설정된 모델:"
-          - "  - Chat: Claude 3 Haiku (빠른 응답)"
-          - "  - Smart: Claude 3 Sonnet (고품질)"
-          - "  - Embedding: Titan Embed Text"
+          - "🎯 AWS 서비스 연동 설정 완료!"
           - ""
-          - "📋 생성된 파일:"
-          - "  - /home/ec2-user/app/test_bedrock.py"
-          - "  - /home/ec2-user/app/bedrock_config.env"
-          - "  - /home/ec2-user/app/ai_recommendation_example.py"
+          - "📋 생성된 설정 파일:"
+          - "  - {{ app_directory }}/bedrock_config.env"
+          - "  - {{ app_directory }}/ses_config.env"
+          - "  - {{ app_directory }}/cloudfront_config.env"
           - ""
-          - "🔧 다음 단계:"
-          - "  1. AWS 콘솔에서 Bedrock 모델 액세스 요청"
-          - "  2. 테스트 스크립트 실행: python3 test_bedrock.py"
-          - "  3. 애플리케이션에 AI 추천 기능 통합"
-
-    - name: 13. 비용 최적화 안내
-      debug:
-        msg:
-          - "💰 Bedrock 비용 최적화 팁:"
-          - "  - Haiku 모델: 빠르고 저렴 (일반 응답용)"
-          - "  - Sonnet 모델: 고품질 (중요한 응답용)"
-          - "  - 캐싱 활용: 반복적인 요청 저장"
-          - "  - 요청 수 모니터링: CloudWatch 활용"
-          - "  - 배치 처리: 대량 요청 시 효율적"
+          - "🔧 생성된 테스트 스크립트:"
+          - "  - {{ app_directory }}/test_bedrock.py"
+          - "  - {{ app_directory }}/test_ses.py"
+          - "  - {{ app_directory }}/ai_recommendation_example.py"
+          - ""
+          - "🚀 다음 단계:"
+          - "  1. Terraform apply로 AWS 리소스 생성"
+          - "  2. AWS 콘솔에서 Bedrock 모델 액세스 요청"
+          - "  3. SES 도메인/이메일 인증 완료"
+          - "  4. 애플리케이션에 설정 파일 통합"
