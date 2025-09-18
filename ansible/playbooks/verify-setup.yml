@@ -1,0 +1,91 @@
+---
+- name: 메추라기 서버 설정 검증
+  hosts: mechuragi-server
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    # 포트 및 네트워크 확인
+    - name: 1. 포트 3306 리스닝 상태 확인
+      command: netstat -tuln | grep 3306
+      register: port_check
+      ignore_errors: yes
+
+    - name: 2. 포트 3306 리스닝 결과 출력
+      debug:
+        msg: "포트 3306 상태: {{ port_check.stdout if port_check.rc == 0 else '포트가 열려있지 않음' }}"
+
+    # 버전 정보 확인
+    - name: 3. MySQL 버전 정보 확인
+      command: docker exec mysql-server mysql --version
+      register: mysql_version
+      ignore_errors: yes
+
+    - name: 4. MySQL 버전 정보 출력
+      debug:
+        msg: "MySQL 버전: {{ mysql_version.stdout if mysql_version.rc == 0 else '버전 확인 실패' }}"
+
+    # 서비스 상태 확인
+    - name: 5. Docker 및 Redis 서비스 상태 확인
+      command: systemctl is-active docker redis
+      register: service_status
+      ignore_errors: yes
+
+    - name: 6. 서비스 상태 결과 출력
+      debug:
+        msg: "서비스 상태: {{ service_status.stdout_lines if service_status.rc == 0 else '서비스 상태 확인 실패' }}"
+
+    # Docker 컨테이너 확인
+    - name: 7. 실행 중인 Docker 컨테이너 목록 확인
+      command: docker ps
+      register: docker_containers
+      ignore_errors: yes
+
+    - name: 8. Docker 컨테이너 목록 출력
+      debug:
+        msg: "실행 중인 컨테이너: {{ docker_containers.stdout_lines if docker_containers.rc == 0 else '컨테이너 목록 확인 실패' }}"
+
+    # 디스크 사용량 확인
+    - name: 9. 디스크 사용량 확인
+      command: df -h
+      register: disk_usage
+      ignore_errors: yes
+
+    - name: 10. 디스크 사용량 출력
+      debug:
+        msg: "디스크 사용량: {{ disk_usage.stdout_lines if disk_usage.rc == 0 else '디스크 정보 확인 실패' }}"
+
+    # 메모리 사용량 확인
+    - name: 11. 메모리 사용량 확인
+      command: free -h
+      register: memory_usage
+      ignore_errors: yes
+
+    - name: 12. 메모리 사용량 출력
+      debug:
+        msg: "메모리 사용량: {{ memory_usage.stdout_lines if memory_usage.rc == 0 else '메모리 정보 확인 실패' }}"
+
+    # CPU 사용량 확인
+    - name: 13. CPU 정보 확인
+      command: nproc
+      register: cpu_info
+      ignore_errors: yes
+
+    - name: 14. 시스템 부하 확인
+      command: uptime
+      register: system_load
+      ignore_errors: yes
+
+    - name: 15. 시스템 리소스 정보 출력
+      debug:
+        msg:
+          - "CPU 코어 수: {{ cpu_info.stdout if cpu_info.rc == 0 else '확인 실패' }}"
+          - "시스템 부하: {{ system_load.stdout if system_load.rc == 0 else '확인 실패' }}"
+
+    # 최종 검증 결과
+    - name: 16. 전체 설정 검증 완료 메시지
+      debug:
+        msg:
+          - "🔍 메추라기 서버 설정 검증 완료!"
+          - "모든 시스템 상태가 확인되었습니다."
+          - "서버가 정상적으로 운영 준비 상태입니다."

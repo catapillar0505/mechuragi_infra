@@ -1,0 +1,51 @@
+---
+- name: 메추라기 Docker 환경 구성
+  hosts: mechuragi-server
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: 1. Docker 설치
+      command: yum install -y docker
+
+    - name: 2. Docker 서비스 시작 및 활성화
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: 3. ec2-user를 docker 그룹에 추가
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+
+    - name: 4. Docker Compose 설치
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: 5. Docker Compose 심볼릭 링크 생성
+      file:
+        src: /usr/local/bin/docker-compose
+        dest: /usr/bin/docker-compose
+        state: link
+
+    - name: 6. Docker 설치 확인
+      command: docker --version
+      register: docker_version
+      ignore_errors: yes
+
+    - name: 7. Docker Compose 설치 확인
+      command: docker-compose --version
+      register: docker_compose_version
+      ignore_errors: yes
+
+    - name: 8. Docker 환경 구성 완료 메시지
+      debug:
+        msg:
+          - "🐋 Docker 환경 구성 완료!"
+          - "Docker 버전: {{ docker_version.stdout if docker_version.rc == 0 else '확인 실패' }}"
+          - "Docker Compose 버전: {{ docker_compose_version.stdout if docker_compose_version.rc == 0 else '확인 실패' }}"
+          - "ec2-user가 docker 그룹에 추가되었습니다."

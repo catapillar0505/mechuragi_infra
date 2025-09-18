@@ -1,0 +1,14 @@
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.env
+*.pem
+*.key
+*.retry
+
+# Ansible 민감한 변수 파일들
+ansible/group_vars/all.yml
+ansible/host_vars/
+ansible/inventory/hosts.yml
