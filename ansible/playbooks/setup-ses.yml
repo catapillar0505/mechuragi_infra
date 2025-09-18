@@ -1,0 +1,206 @@
+---
+- name: AWS SES 설정 및 이메일 인증
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: 1. 도메인 신원 확인 요청
+      amazon.aws.ses_identity:
+        identity: "{{ ses_domain }}"
+        state: present
+      register: domain_verification
+      when: ses_domain is defined
+
+    - name: 2. 이메일 주소 신원 확인 요청
+      amazon.aws.ses_identity:
+        identity: "{{ ses_email }}"
+        state: present
+      register: email_verification
+
+    - name: 3. 도메인 DKIM 활성화
+      amazon.aws.ses_identity_policy:
+        identity: "{{ ses_domain }}"
+        policy_name: "DkimPolicy"
+        policy: |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "ses.amazonaws.com"
+                },
+                "Action": "ses:SendEmail",
+                "Resource": "*"
+              }
+            ]
+          }
+      when: ses_domain is defined
+
+    - name: 4. DKIM 토큰 생성 및 활성화
+      amazon.aws.ses_rule_set:
+        name: "{{ project_name }}-{{ environment }}-ruleset"
+        state: present
+      register: dkim_tokens
+
+    - name: 5. 발신 할당량 확인
+      amazon.aws.ses_sending_quota:
+      register: sending_quota
+
+    - name: 6. 발신 통계 확인
+      amazon.aws.ses_send_statistics:
+      register: send_statistics
+
+    - name: 7. 이메일 템플릿 생성 - 환영 메일
+      amazon.aws.ses_template:
+        name: "{{ project_name }}-welcome-email"
+        subject: "{{ project_name }}에 오신 것을 환영합니다! 🎉"
+        text: |
+          안녕하세요 {{name}}님,
+          
+          {{ project_name }}에 가입해 주셔서 감사합니다!
+          
+          지금부터 다양한 기능을 이용하실 수 있습니다:
+          - 개인화된 추천 서비스
+          - 커뮤니티 참여
+          - 실시간 알림
+          
+          궁금한 점이 있으시면 언제든 문의해 주세요.
+          
+          감사합니다.
+          {{ project_name }} 팀
+        html: |
+          <html>
+            <head></head>
+            <body>
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #333;">안녕하세요 {{name}}님! 👋</h2>
+                
+                <p><strong>{{ project_name }}</strong>에 가입해 주셔서 감사합니다!</p>
+                
+                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                  <h3 style="color: #495057;">이제 이용 가능한 기능들:</h3>
+                  <ul style="color: #6c757d;">
+                    <li>🎯 개인화된 추천 서비스</li>
+                    <li>👥 커뮤니티 참여</li>
+                    <li>🔔 실시간 알림</li>
+                  </ul>
+                </div>
+                
+                <p>궁금한 점이 있으시면 언제든 <a href="mailto:{{ support_email }}">문의</a>해 주세요.</p>
+                
+                <hr style="margin: 30px 0; border: none; border-top: 1px solid #dee2e6;">
+                <p style="color: #6c757d; font-size: 12px;">
+                  {{ project_name }} 팀<br>
+                  이 메일은 발신 전용입니다.
+                </p>
+              </div>
+            </body>
+          </html>
+        state: present
+
+    - name: 8. 이메일 템플릿 생성 - 비밀번호 재설정
+      amazon.aws.ses_template:
+        name: "{{ project_name }}-password-reset"
+        subject: "{{ project_name }} 비밀번호 재설정 요청"
+        text: |
+          안녕하세요 {{name}}님,
+          
+          비밀번호 재설정을 요청하셨습니다.
+          
+          아래 링크를 클릭하여 새 비밀번호를 설정해 주세요:
+          {{reset_link}}
+          
+          이 링크는 24시간 후 만료됩니다.
+          
+          요청하지 않으셨다면 이 메일을 무시해 주세요.
+          
+          {{ project_name }} 팀
+        html: |
+          <html>
+            <head></head>
+            <body>
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #333;">비밀번호 재설정</h2>
+                
+                <p>안녕하세요 <strong>{{name}}</strong>님,</p>
+                
+                <p>비밀번호 재설정을 요청하셨습니다.</p>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="{{reset_link}}" 
+                     style="background-color: #007bff; color: white; padding: 12px 24px; 
+                            text-decoration: none; border-radius: 4px; display: inline-block;">
+                    비밀번호 재설정
+                  </a>
+                </div>
+                
+                <p style="color: #dc3545; font-size: 14px;">
+                  ⚠️ 이 링크는 24시간 후 만료됩니다.
+                </p>
+                
+                <p style="color: #6c757d;">
+                  요청하지 않으셨다면 이 메일을 무시해 주세요.
+                </p>
+                
+                <hr style="margin: 30px 0; border: none; border-top: 1px solid #dee2e6;">
+                <p style="color: #6c757d; font-size: 12px;">
+                  {{ project_name }} 팀
+                </p>
+              </div>
+            </body>
+          </html>
+        state: present
+
+    - name: 9. 테스트 이메일 발송
+      amazon.aws.ses_send_email:
+        source: "{{ ses_email }}"
+        to: "{{ test_email | default(ses_email) }}"
+        subject: "{{ project_name }} SES 설정 테스트"
+        body: |
+          SES 설정이 성공적으로 완료되었습니다!
+          
+          이 메일이 정상적으로 수신되었다면 SES 설정이 올바르게 되었습니다.
+          
+          테스트 정보:
+          - 발신자: {{ ses_email }}
+          - 수신자: {{ test_email | default(ses_email) }}
+          - 시간: {{ ansible_date_time.iso8601 }}
+          
+          {{ project_name }} 팀
+      register: test_email_result
+      when: send_test_email | default(true)
+
+    - name: 10. SES 설정 정보 출력
+      debug:
+        msg:
+          - "📧 AWS SES 설정 완료!"
+          - "도메인 인증: {{ ' 요청됨' if ses_domain is defined else '미설정' }}"
+          - "이메일 인증: 요청됨 ({{ ses_email }})"
+          - "발신 할당량: {{ sending_quota.max_24_hour_send | default('확인 필요') }}"
+          - "발신 속도: {{ sending_quota.max_send_rate | default('확인 필요') }}/초"
+          - "테스트 메일: {{ '발송됨' if test_email_result is defined else '발송 안됨' }}"
+
+    - name: 11. 도메인 DNS 설정 안내
+      debug:
+        msg:
+          - "🔧 DNS 설정 안내:"
+          - "1. AWS SES 콘솔에서 도메인 인증 상태 확인"
+          - "2. 제공된 TXT 레코드를 DNS에 추가"
+          - "3. DKIM CNAME 레코드 3개를 DNS에 추가"
+          - "4. MX 레코드 설정 (이메일 수신용, 선택사항)"
+          - ""
+          - "⚠️ DNS 전파에는 최대 72시간이 소요될 수 있습니다."
+      when: ses_domain is defined
+
+    - name: 12. 프로덕션 사용을 위한 안내
+      debug:
+        msg:
+          - "🚀 프로덕션 사용을 위한 추가 설정:"
+          - "1. AWS 지원팀에 SES 제한 해제 요청"
+          - "2. 발신 할당량 증가 요청"
+          - "3. 도메인 인증 완료"
+          - "4. 반송 및 불만 처리 설정"
+          - ""
+          - "📋 현재는 샌드박스 모드 (확인된 이메일로만 발송 가능)"

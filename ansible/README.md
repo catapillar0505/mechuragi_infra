@@ -88,6 +88,32 @@ ansible-playbook -i inventory/hosts.yml playbooks/verify-setup.yml
 - 시스템 리소스 사용량 확인
 - Docker 컨테이너 상태 확인
 
+### 추가 단계: AWS 서비스 연동 (선택사항)
+
+#### CloudFront CDN 설정
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/setup-cloudfront.yml
+```
+- S3와 연동된 CDN 배포 생성
+- 이미지 캐싱 최적화 (1주일)
+- HTTPS 리다이렉트 설정
+
+#### AWS SES 이메일 서비스 설정
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/setup-ses.yml
+```
+- 도메인/이메일 인증 설정
+- 이메일 템플릿 생성 (환영메일, 비밀번호 재설정)
+- 테스트 이메일 발송
+
+#### AWS Bedrock AI 서비스 연동
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/setup-bedrock.yml
+```
+- Claude 3 모델 연동 설정
+- AI 추천 시스템 예제 코드 생성
+- 임베딩 모델 설정
+
 ## 🔧 개별 실행 옵션
 
 ### 특정 플레이북만 실행

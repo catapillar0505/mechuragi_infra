@@ -1,0 +1,172 @@
+---
+- name: AWS CloudFront 배포 설정
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: 1. S3 버킷 정보 확인
+      amazon.aws.s3_bucket_info:
+        name: "{{ s3_bucket_name }}"
+      register: s3_bucket_info
+
+    - name: 2. S3 버킷 존재 확인
+      debug:
+        msg: "S3 버킷 확인됨: {{ s3_bucket_name }}"
+      when: s3_bucket_info.exists
+
+    - name: 3. CloudFront Origin Access Control (OAC) 생성
+      amazon.aws.cloudfront_origin_access_control:
+        name: "{{ project_name }}-{{ environment }}-oac"
+        description: "OAC for {{ project_name }} S3 bucket"
+        origin_access_control_config:
+          origin_access_control_origin_type: s3
+          signing_behavior: always
+          signing_protocol: sigv4
+        state: present
+      register: oac_result
+
+    - name: 4. CloudFront 배포 생성
+      amazon.aws.cloudfront_distribution:
+        state: present
+        distribution_config:
+          caller_reference: "{{ project_name }}-{{ environment }}-{{ ansible_date_time.epoch }}"
+          comment: "CloudFront distribution for {{ project_name }}"
+          default_root_object: "index.html"
+          enabled: true
+          price_class: "PriceClass_100"  # 미국, 캐나다, 유럽만
+          
+          origins:
+            - id: "{{ s3_bucket_name }}-origin"
+              domain_name: "{{ s3_bucket_name }}.s3.{{ aws_region }}.amazonaws.com"
+              s3_origin_config:
+                origin_access_identity: ""
+              origin_access_control_id: "{{ oac_result.origin_access_control.id }}"
+          
+          default_cache_behavior:
+            target_origin_id: "{{ s3_bucket_name }}-origin"
+            viewer_protocol_policy: "redirect-to-https"
+            allowed_methods:
+              - GET
+              - HEAD
+              - OPTIONS
+            cached_methods:
+              - GET
+              - HEAD
+            forwarded_values:
+              query_string: false
+              cookies:
+                forward: "none"
+            min_ttl: 0
+            default_ttl: 86400  # 1일
+            max_ttl: 31536000   # 1년
+            compress: true
+          
+          cache_behaviors:
+            - path_pattern: "/api/*"
+              target_origin_id: "{{ s3_bucket_name }}-origin"
+              viewer_protocol_policy: "redirect-to-https"
+              allowed_methods:
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - POST
+                - PUT
+              cached_methods:
+                - GET
+                - HEAD
+              forwarded_values:
+                query_string: true
+                headers:
+                  - "*"
+                cookies:
+                  forward: "all"
+              min_ttl: 0
+              default_ttl: 0
+              max_ttl: 0
+            
+            - path_pattern: "/images/*"
+              target_origin_id: "{{ s3_bucket_name }}-origin"
+              viewer_protocol_policy: "redirect-to-https"
+              allowed_methods:
+                - GET
+                - HEAD
+              cached_methods:
+                - GET
+                - HEAD
+              forwarded_values:
+                query_string: false
+                cookies:
+                  forward: "none"
+              min_ttl: 86400    # 1일
+              default_ttl: 604800  # 1주일
+              max_ttl: 31536000    # 1년
+              compress: true
+          
+          custom_error_responses:
+            - error_code: 403
+              response_code: 200
+              response_page_path: "/index.html"
+            - error_code: 404
+              response_code: 200
+              response_page_path: "/index.html"
+          
+          web_acl_id: ""
+        tags:
+          Name: "{{ project_name }}-{{ environment }}-cloudfront"
+          Project: "{{ project_name }}"
+          Environment: "{{ environment }}"
+      register: cloudfront_result
+
+    - name: 5. S3 버킷 정책 업데이트 (CloudFront 접근 허용)
+      amazon.aws.s3_bucket_policy:
+        name: "{{ s3_bucket_name }}"
+        policy: |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "AllowCloudFrontServicePrincipal",
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "cloudfront.amazonaws.com"
+                },
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::{{ s3_bucket_name }}/*",
+                "Condition": {
+                  "StringEquals": {
+                    "AWS:SourceArn": "{{ cloudfront_result.distribution.arn }}"
+                  }
+                }
+              }
+            ]
+          }
+
+    - name: 6. CloudFront 배포 정보 출력
+      debug:
+        msg:
+          - "🌐 CloudFront 배포 생성 완료!"
+          - "배포 ID: {{ cloudfront_result.distribution.id }}"
+          - "도메인 이름: {{ cloudfront_result.distribution.domain_name }}"
+          - "상태: {{ cloudfront_result.distribution.status }}"
+          - "URL: https://{{ cloudfront_result.distribution.domain_name }}"
+
+    - name: 7. 배포 완료 대기 (선택사항)
+      amazon.aws.cloudfront_distribution_info:
+        id: "{{ cloudfront_result.distribution.id }}"
+      register: distribution_status
+      until: distribution_status.distribution.status == "Deployed"
+      retries: 30
+      delay: 60
+      when: wait_for_deployment | default(false)
+
+    - name: 8. 최종 설정 완료 메시지
+      debug:
+        msg:
+          - "✅ CloudFront 설정 완료!"
+          - "이미지 캐싱: 1주일"
+          - "API 캐싱: 비활성화"
+          - "HTTPS 리다이렉트: 활성화"
+          - "압축: 활성화"
