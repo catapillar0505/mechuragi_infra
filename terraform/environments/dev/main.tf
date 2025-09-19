@@ -62,7 +62,7 @@ module "s3" {
 # CloudFront 모듈 호출
 module "cloudfront" {
   source = "../../modules/cloudfront"
-  
+
   project_name           = var.project_name
   environment            = var.environment
   s3_bucket_name         = module.s3.s3_bucket_name
@@ -73,7 +73,7 @@ module "cloudfront" {
 # SES 모듈 호출
 module "ses" {
   source = "../../modules/ses"
-  
+
   project_name = var.project_name
   environment  = var.environment
   aws_region   = var.aws_region
@@ -84,7 +84,7 @@ module "ses" {
 # Bedrock 모듈 호출
 module "bedrock" {
   source = "../../modules/bedrock"
-  
+
   project_name       = var.project_name
   environment        = var.environment
   chat_model_id      = var.bedrock_chat_model

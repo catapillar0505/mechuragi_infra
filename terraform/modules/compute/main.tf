@@ -1,11 +1,11 @@
-# Amazon Linux AMI 조회 (더 안정적)
-data "aws_ami" "amazon_linux" {
+# Ubuntu 22.04 LTS AMI 조회
+data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["amazon"]
+  owners      = ["099720109477"] # Canonical
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
   }
 
   filter {
@@ -21,7 +21,7 @@ data "aws_ami" "amazon_linux" {
 
 # EC2 인스턴스 생성
 resource "aws_instance" "web" {
-  ami                    = data.aws_ami.amazon_linux.id
+  ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
   key_name               = var.key_pair_name
   vpc_security_group_ids = [var.security_group_id]

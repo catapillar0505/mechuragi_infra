@@ -1,27 +1,11 @@
 ---
 - name: 메추라기 시스템 기본 설정
   hosts: mechuragi-server
-  become: yes
-  gather_facts: yes
-
-  tasks:
-    - name: 1. 시스템 패키지 업데이트
-      command: yum update -y
-
-    - name: 2. 필수 패키지 설치 (git, curl, wget, vim, htop)
-      command: yum install -y git curl wget vim htop
-
-    - name: 3. 애플리케이션 디렉토리 생성
-      file:
-        path: "{{ app_directory }}"
-        state: directory
-        owner: ec2-user
-        group: ec2-user
-        mode: '0755'
-
-    - name: 4. 시스템 기본 설정 완료 메시지
-      debug:
-        msg:
-          - "✅ 시스템 기본 설정 완료!"
-          - "패키지가 업데이트되고 필수 도구가 설치되었습니다."
-          - "애플리케이션 디렉토리: {{ app_directory }}"
+  become: yes        # sudo 권한으로 실행 (root 권한 필요한 작업용)
+  gather_facts: yes   # 서버 정보 수집 (OS, 버전, IP 등 ansible_* 변수들)
+  vars_files:
+    - ../group_vars/all.yml
+  vars:
+    app_directory: "/home/ubuntu/app"
+  roles:
+    - system

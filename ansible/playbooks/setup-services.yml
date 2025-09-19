@@ -1,73 +1,9 @@
 ---
-- name: 메추라기 서비스 구성 (MySQL, Redis)
+- name: 메추라기 서비스 구성 (Redis)
   hosts: mechuragi-server
   become: yes
   gather_facts: yes
-
-  tasks:
-    # MySQL 설정
-    - name: 1. MySQL 8.0 Docker 컨테이너 실행
-      command: docker run -d --name mysql-server --restart unless-stopped -e MYSQL_ROOT_PASSWORD={{ mysql_root_password }} -p 3306:3306 {{ mysql_docker_image }}
-      ignore_errors: yes
-
-    - name: 2. MySQL 컨테이너 준비 대기 (30초)
-      pause:
-        seconds: 30
-
-    - name: 3. MySQL 연결 테스트
-      command: docker exec mysql-server mysql -u root -p{{ mysql_root_password }} -e 'SELECT VERSION();'
-      register: mysql_test
-      ignore_errors: yes
-
-    - name: 4. MySQL 연결 테스트 결과 출력
-      debug:
-        msg: "MySQL 연결 테스트: {{ mysql_test.stdout if mysql_test.rc == 0 else 'Connection failed' }}"
-
-    # Redis 설정
-    - name: 5. Redis 설치 (amazon-linux-extras 사용)
-      command: amazon-linux-extras install -y redis6
-
-    - name: 6. Redis 설정 - bind 주소 변경
-      lineinfile:
-        path: /etc/redis.conf
-        regexp: '^bind 127.0.0.1'
-        line: 'bind 0.0.0.0'
-        backup: yes
-
-    - name: 7. Redis 포트 설정
-      lineinfile:
-        path: /etc/redis.conf
-        regexp: '^port'
-        line: "port {{ redis_port }}"
-
-    - name: 8. Redis 서비스 시작 및 활성화
-      systemd:
-        name: redis
-        state: started
-        enabled: yes
-
-    - name: 9. Redis 연결 테스트 (ping)
-      command: redis-cli ping
-      register: redis_ping
-      ignore_errors: yes
-
-    - name: 10. Redis 연결 테스트 결과 출력
-      debug:
-        msg: "Redis 연결 상태: {{ redis_ping.stdout if redis_ping.rc == 0 else 'Redis 연결 실패' }}"
-
-    - name: 11. Redis 메모리 사용량 확인
-      command: redis-cli info memory
-      register: redis_memory
-      ignore_errors: yes
-
-    - name: 12. Redis 메모리 정보 출력
-      debug:
-        msg: "Redis 메모리 정보: {{ redis_memory.stdout_lines[:5] if redis_memory.rc == 0 else 'Redis 메모리 정보 확인 실패' }}"
-
-    - name: 13. 서비스 구성 완료 메시지
-      debug:
-        msg:
-          - "🗄️ 서비스 구성 완료!"
-          - "MySQL: Docker 컨테이너로 실행 (포트 3306)"
-          - "Redis: 시스템 서비스로 실행 (포트 {{ redis_port }})"
-          - "모든 서비스가 정상적으로 설정되었습니다."
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - redis

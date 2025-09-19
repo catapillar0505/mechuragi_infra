@@ -3,66 +3,7 @@
   hosts: mechuragi-server
   become: yes
   gather_facts: yes
-
-  tasks:
-    - name: 1. mechuragi 프로젝트용 데이터베이스 생성
-      command: docker exec mysql-server mysql -u root -p{{ mysql_root_password }} -e 'CREATE DATABASE IF NOT EXISTS {{ mysql_database }} DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'
-      register: db_creation
-      ignore_errors: yes
-
-    - name: 2. 데이터베이스 생성 결과 출력
-      debug:
-        msg: "데이터베이스 생성: {{ 'SUCCESS' if db_creation.rc == 0 else 'FAILED - ' + db_creation.stderr }}"
-
-    - name: 3. 애플리케이션용 사용자 생성
-      shell: docker exec mysql-server mysql -u root -p{{ mysql_root_password }} -e "CREATE USER IF NOT EXISTS '{{ mysql_app_user }}'@'%' IDENTIFIED BY '{{ mysql_app_password }}';"
-      register: user_creation
-      ignore_errors: yes
-
-    - name: 4. 사용자 생성 결과 출력
-      debug:
-        msg: "사용자 생성: {{ 'SUCCESS' if user_creation.rc == 0 else 'FAILED - ' + user_creation.stderr }}"
-
-    - name: 5. 데이터베이스 권한 부여
-      shell: docker exec mysql-server mysql -u root -p{{ mysql_root_password }} -e "GRANT ALL PRIVILEGES ON {{ mysql_database }}.* TO '{{ mysql_app_user }}'@'%'; FLUSH PRIVILEGES;"
-      register: grant_privileges
-      ignore_errors: yes
-
-    - name: 6. 권한 부여 결과 출력
-      debug:
-        msg: "권한 부여: {{ 'SUCCESS' if grant_privileges.rc == 0 else 'FAILED - ' + grant_privileges.stderr }}"
-
-    - name: 7. 생성된 데이터베이스 목록 확인
-      command: docker exec mysql-server mysql -u root -p{{ mysql_root_password }} -e 'SHOW DATABASES;'
-      register: show_databases
-      ignore_errors: yes
-
-    - name: 8. 데이터베이스 목록 출력
-      debug:
-        msg: "데이터베이스 목록: {{ show_databases.stdout_lines if show_databases.rc == 0 else '목록 확인 실패' }}"
-
-    - name: 9. 생성된 사용자 확인
-      command: docker exec mysql-server mysql -u root -p{{ mysql_root_password }} -e "SELECT User, Host FROM mysql.user WHERE User='{{ mysql_app_user }}}';"
-      register: show_users
-      ignore_errors: yes
-
-    - name: 10. 사용자 정보 출력
-      debug:
-        msg: "{{ mysql_app_user }} 정보: {{ show_users.stdout_lines if show_users.rc == 0 else '사용자 확인 실패' }}"
-
-    - name: 11. 애플리케이션 사용자로 연결 테스트
-      command: docker exec mysql-server mysql -u {{ mysql_app_user }} -p{{ mysql_app_password }} -e 'SELECT DATABASE(), USER();'
-      register: app_user_test
-      ignore_errors: yes
-
-    - name: 12. 애플리케이션 사용자 연결 테스트 결과
-      debug:
-        msg: "앱 사용자 연결: {{ 'SUCCESS' if app_user_test.rc == 0 else 'FAILED - ' + app_user_test.stderr }}"
-
-    - name: 13. 데이터베이스 초기화 완료 메시지
-      debug:
-        msg:
-          - "🗄️ 메추라기 데이터베이스 초기화 완료!"
-          - "데이터베이스: {{ mysql_database }}"
-          - "사용자: {{ mysql_app_user }}"
-          - "문자셋: utf8mb4_unicode_ci"
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - mysql

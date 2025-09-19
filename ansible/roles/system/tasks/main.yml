@@ -1,0 +1,45 @@
+---
+- name: 1. 마지막 업데이트 시간 확인
+  stat:
+    path: /var/log/apt/history.log
+  register: apt_log
+
+- name: 2. Ubuntu 패키지 업데이트
+  ansible.builtin.apt:
+    name: "*"
+    state: latest
+    update_cache: yes
+  when: >
+    (apt_log.stat.mtime is not defined or
+    (ansible_date_time.epoch | int) - apt_log.stat.mtime > 86400)
+  register: ubuntu_update_result
+
+- name: 패키지 업데이트 건너뛰기 메시지
+  debug:
+    msg: "📦 패키지가 최근에 업데이트되었습니다. 업데이트를 건너뜁니다."
+  when: ubuntu_update_result is skipped or ubuntu_update_result is not defined
+
+- name: 3. Ubuntu 필수 패키지 설치
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - wget
+      - vim
+      - htop
+    state: present
+
+- name: 4. 애플리케이션 디렉토리 생성
+  file:
+    path: "{{ app_directory }}"
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+
+- name: 5. 시스템 기본 설정 완료 메시지
+  debug:
+    msg:
+      - "✅ 시스템 기본 설정 완료!"
+      - "패키지가 업데이트되고 필수 도구가 설치되었습니다."
+      - "애플리케이션 디렉토리: {{ app_directory }}"
