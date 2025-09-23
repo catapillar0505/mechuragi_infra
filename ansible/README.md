@@ -306,5 +306,3 @@ ansible-inventory -i inventory/hosts.yml --host mysql-server --vars
 - 메인 서비스만 Public IP 보유
 - 나머지 서버들은 SSH 점프 박스를 통해 접근
 - 내부 통신은 Private IP 사용
-
-이제 재사용성과 유지보수성이 크게 향상된 Ansible 구조로 메추라기 분산 인프라를 관리할 수 있습니다! 🚀
