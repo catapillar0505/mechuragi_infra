@@ -1,0 +1,10 @@
+---
+- name: MySQL 재시작
+  systemd:
+    name: mysql
+    state: restarted
+
+- name: MySQL 다시로드
+  systemd:
+    name: mysql
+    state: reloaded

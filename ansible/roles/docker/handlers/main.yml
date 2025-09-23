@@ -1,0 +1,11 @@
+---
+- name: 도커 서비스 시작
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: 도커 서비스 재시작
+  systemd:
+    name: docker
+    state: restarted

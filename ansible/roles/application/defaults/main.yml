@@ -1,0 +1,40 @@
+---
+# 애플리케이션 기본 설정
+app_name: "mechuragi-app"
+app_type: "springboot"
+app_port: 8080
+app_directory: "/home/ubuntu/app"
+app_force_recreate: false
+
+# Docker 설정
+app_docker_network: "mechuragi-network"
+app_docker_image: "openjdk:17-jdk-slim"
+
+# 로그 설정
+app_log_directory: "/var/log/{{ app_name }}"
+app_log_max_size: "10M"
+app_log_max_files: 3
+
+# 환경 변수
+app_environment:
+  SPRING_PROFILES_ACTIVE: "production"
+  LOGGING_LEVEL_ROOT: "INFO"
+
+# 헬스체크 설정
+app_health_check_enabled: true
+app_health_check_path: "/actuator/health"
+app_health_check_timeout: 30
+app_health_check_retries: 10
+
+# 데이터베이스 연결 설정
+db_connection_enabled: true
+db_host: "localhost"
+db_port: 3306
+db_name: "mechuragi_db"
+db_username: "mechuragi_user"
+db_password: "mechuragi_pass"
+
+# Redis 연결 설정
+redis_connection_enabled: true
+redis_host: "localhost"
+redis_port: 6379

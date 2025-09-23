@@ -1,0 +1,18 @@
+---
+- name: 데이터베이스 서버 구축
+  hosts: database
+  become: yes
+  roles:
+    - common
+    - mysql
+
+  post_tasks:
+    - name: MySQL 연결 테스트
+      mysql_db:
+        login_user: "{{ mysql_app_user }}"
+        login_password: "{{ mysql_app_password }}"
+        login_host: "{{ ansible_default_ipv4.address }}"
+        name: "{{ mysql_database }}"
+        state: present
+      delegate_to: localhost
+      run_once: true

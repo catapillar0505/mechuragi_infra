@@ -1,0 +1,72 @@
+---
+- name: AI 추천 서비스 구축 (SpringBoot + AWS Bedrock)
+  hosts: ai_service
+  become: yes
+  vars:
+    service_name: "ai-service"
+
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install required packages
+      apt:
+        name:
+          - docker.io
+          - docker-compose
+          - unzip
+          - curl
+          - git
+        state: present
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Create application directory
+      file:
+        path: "{{ app_directory }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Create config directory
+      file:
+        path: "{{ config_directory }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Create docker-compose file for AI service
+      template:
+        src: templates/docker-compose-ai.yml.j2
+        dest: "{{ app_directory }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: Create environment file for AI service
+      template:
+        src: templates/ai-service.env.j2
+        dest: "{{ app_directory }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    - name: Setup log rotation for AI service
+      template:
+        src: templates/ai-service-logrotate.j2
+        dest: /etc/logrotate.d/ai-service
+        mode: '0644'

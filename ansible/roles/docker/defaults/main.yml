@@ -1,0 +1,12 @@
+---
+# Docker 설정
+docker_compose_version: "v2.21.0"
+docker_users:
+  - ubuntu
+
+# Docker daemon 설정
+docker_daemon_config:
+  log-driver: "json-file"
+  log-opts:
+    max-size: "10m"
+    max-file: "3"

@@ -1,93 +1,37 @@
 ---
-- name: 메인 서비스 구축 (SpringBoot + AWS SES + S3)
+- name: 메인 서비스 구축
   hosts: main_service
   become: yes
   vars:
-    service_name: "main-service"
+    app_name: "main-service"
+    app_type: "main"
+    app_port: "{{ main_service_port }}"
+    app_docker_compose_template: "docker-compose-main.yml.j2"
+    app_env_template: "main-service.env.j2"
+    app_health_check_url: "http://{{ ansible_default_ipv4.address }}:{{ main_service_port }}/actuator/health"
+    nginx_site_name: "main-service"
+    nginx_site_template: "nginx-main-service.conf.j2"
 
-  tasks:
-    - name: Update system packages
-      apt:
-        update_cache: yes
-        upgrade: dist
+  roles:
+    - common
+    - docker
+    - nginx
+    - application
 
-    - name: Install required packages
-      apt:
-        name:
-          - docker.io
-          - docker-compose
-          - nginx
-          - unzip
-          - curl
-          - git
-        state: present
+  post_tasks:
+    - name: 메인 서비스 상태 확인
+      uri:
+        url: "{{ app_health_check_url }}"
+        method: GET
+        timeout: 30
+      register: main_service_health
+      retries: 5
+      delay: 10
+      ignore_errors: yes
 
-    - name: Start and enable Docker
-      systemd:
-        name: docker
-        state: started
-        enabled: yes
-
-    - name: Add ubuntu user to docker group
-      user:
-        name: ubuntu
-        groups: docker
-        append: yes
-
-    - name: Create application directory
-      file:
-        path: "{{ app_directory }}"
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0755'
-
-    - name: Create config directory
-      file:
-        path: "{{ config_directory }}"
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0755'
-
-    - name: Setup nginx for reverse proxy
-      template:
-        src: templates/nginx-main-service.conf.j2
-        dest: /etc/nginx/sites-available/main-service
-        backup: yes
-      notify: restart nginx
-
-    - name: Enable nginx site
-      file:
-        src: /etc/nginx/sites-available/main-service
-        dest: /etc/nginx/sites-enabled/main-service
-        state: link
-      notify: restart nginx
-
-    - name: Remove default nginx site
-      file:
-        path: /etc/nginx/sites-enabled/default
-        state: absent
-      notify: restart nginx
-
-    - name: Create docker-compose file for main service
-      template:
-        src: templates/docker-compose-main.yml.j2
-        dest: "{{ app_directory }}/docker-compose.yml"
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
-
-    - name: Create environment file for main service
-      template:
-        src: templates/main-service.env.j2
-        dest: "{{ app_directory }}/.env"
-        owner: ubuntu
-        group: ubuntu
-        mode: '0600'
-
-  handlers:
-    - name: restart nginx
-      systemd:
-        name: nginx
-        state: restarted
+    - name: 메인 서비스 배포 결과
+      debug:
+        msg: |
+          메인 서비스 배포 상태:
+          - URL: {{ app_health_check_url }}
+          - 상태: {{ 'HEALTHY' if (main_service_health.status is defined and main_service_health.status == 200) else 'UNHEALTHY' }}

@@ -1,72 +1,35 @@
 ---
-- name: AI 추천 서비스 구축 (SpringBoot + AWS Bedrock)
+- name: AI 추천 서비스 구축
   hosts: ai_service
   become: yes
   vars:
-    service_name: "ai-service"
+    app_name: "ai-service"
+    app_type: "ai"
+    app_port: "{{ ai_service_port }}"
+    app_docker_compose_template: "docker-compose-ai.yml.j2"
+    app_env_template: "ai-service.env.j2"
+    app_logrotate_template: "ai-service-logrotate.j2"
+    app_health_check_url: "http://{{ ansible_default_ipv4.address }}:{{ ai_service_port }}/actuator/health"
 
-  tasks:
-    - name: Update system packages
-      apt:
-        update_cache: yes
-        upgrade: dist
+  roles:
+    - common
+    - docker
+    - application
 
-    - name: Install required packages
-      apt:
-        name:
-          - docker.io
-          - docker-compose
-          - unzip
-          - curl
-          - git
-        state: present
+  post_tasks:
+    - name: AI 서비스 상태 확인
+      uri:
+        url: "{{ app_health_check_url }}"
+        method: GET
+        timeout: 30
+      register: ai_service_health
+      retries: 5
+      delay: 10
+      ignore_errors: yes
 
-    - name: Start and enable Docker
-      systemd:
-        name: docker
-        state: started
-        enabled: yes
-
-    - name: Add ubuntu user to docker group
-      user:
-        name: ubuntu
-        groups: docker
-        append: yes
-
-    - name: Create application directory
-      file:
-        path: "{{ app_directory }}"
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0755'
-
-    - name: Create config directory
-      file:
-        path: "{{ config_directory }}"
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0755'
-
-    - name: Create docker-compose file for AI service
-      template:
-        src: templates/docker-compose-ai.yml.j2
-        dest: "{{ app_directory }}/docker-compose.yml"
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
-
-    - name: Create environment file for AI service
-      template:
-        src: templates/ai-service.env.j2
-        dest: "{{ app_directory }}/.env"
-        owner: ubuntu
-        group: ubuntu
-        mode: '0600'
-
-    - name: Setup log rotation for AI service
-      template:
-        src: templates/ai-service-logrotate.j2
-        dest: /etc/logrotate.d/ai-service
-        mode: '0644'
+    - name: AI 서비스 배포 결과
+      debug:
+        msg: |
+          AI 추천 서비스 배포 상태:
+          - URL: {{ app_health_check_url }}
+          - 상태: {{ 'HEALTHY' if (ai_service_health.status is defined and ai_service_health.status == 200) else 'UNHEALTHY' }}

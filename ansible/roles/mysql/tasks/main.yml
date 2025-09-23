@@ -1,0 +1,99 @@
+---
+- name: MySQL 패키지 설치
+  apt:
+    name:
+      - mysql-server
+      - mysql-client
+      - python3-pymysql
+    state: present
+
+- name: MySQL 서비스 시작 및 활성화
+  systemd:
+    name: mysql
+    state: started
+    enabled: yes
+
+- name: MySQL 루트 패스워드 설정
+  mysql_user:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    name: root
+    password: "{{ mysql_root_password }}"
+    state: present
+  ignore_errors: yes
+
+- name: MySQL 설정 파일 생성
+  template:
+    src: mysql.cnf.j2
+    dest: /etc/mysql/mysql.conf.d/mechuragi.cnf
+    backup: yes
+  notify: MySQL 재시작
+
+- name: 애플리케이션 데이터베이스 생성
+  mysql_db:
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    name: "{{ mysql_database }}"
+    state: present
+
+- name: 애플리케이션 사용자 생성
+  mysql_user:
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    name: "{{ mysql_app_user }}"
+    password: "{{ mysql_app_password }}"
+    priv: "{{ mysql_database }}.*:ALL"
+    host: "%"
+    state: present
+
+- name: 익명 사용자 제거
+  mysql_user:
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    name: ""
+    host_all: yes
+    state: absent
+
+- name: 테스트 데이터베이스 제거
+  mysql_db:
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    name: test
+    state: absent
+
+- name: MySQL 백업 디렉토리 생성
+  file:
+    path: "{{ mysql_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: MySQL 백업 스크립트 설치
+  template:
+    src: mysql-backup.sh.j2
+    dest: /usr/local/bin/mysql-backup.sh
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: MySQL 백업 크론 작업 설정
+  cron:
+    name: "MySQL 자동 백업"
+    minute: "0"
+    hour: "2"
+    job: "/usr/local/bin/mysql-backup.sh"
+    user: root
+
+- name: MySQL 로그 로테이션 설정
+  template:
+    src: mysql-logrotate.j2
+    dest: /etc/logrotate.d/mysql-server
+    mode: '0644'
+
+- name: MySQL 설치 완료 메시지
+  debug:
+    msg: |
+      🗄️ MySQL 데이터베이스 구축 완료!
+      - 데이터베이스: {{ mysql_database }}
+      - 사용자: {{ mysql_app_user }}
+      - 백업 디렉토리: {{ mysql_backup_dir }}

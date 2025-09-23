@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  main-service:
+    image: openjdk:17-jdk-slim
+    container_name: mechuragi-main-service
+    ports:
+      - "{{ main_service_port }}:{{ main_service_port }}"
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+      - SERVER_PORT={{ main_service_port }}
+      - DB_HOST={{ mysql_private_ip }}
+      - DB_PORT=3306
+      - DB_NAME={{ mysql_database }}
+      - DB_USERNAME={{ mysql_app_user }}
+      - DB_PASSWORD={{ mysql_app_password }}
+      - REDIS_HOST={{ redis_private_ip }}
+      - REDIS_PORT={{ redis_port }}
+      - AWS_REGION={{ aws_region }}
+      - S3_BUCKET_NAME={{ s3_bucket_name }}
+      - SES_FROM_EMAIL={{ ses_email }}
+      - AI_SERVICE_URL=http://{{ ai_service_private_ip }}:{{ ai_service_port }}
+    volumes:
+      - {{ app_directory }}/main-service.jar:/app/main-service.jar:ro
+      - {{ config_directory }}:/config:ro
+    working_dir: /app
+    command: ["java", "-jar", "main-service.jar"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:{{ main_service_port }}/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - mechuragi-network
+
+networks:
+  mechuragi-network:
+    driver: bridge

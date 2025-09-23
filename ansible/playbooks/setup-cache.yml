@@ -1,0 +1,19 @@
+---
+- name: 캐시 서버 구축
+  hosts: cache
+  become: yes
+  roles:
+    - common
+    - redis
+
+  post_tasks:
+    - name: Redis 연결 테스트
+      command: redis-cli -h {{ ansible_default_ipv4.address }} -p {{ redis_port }} ping
+      register: redis_ping_result
+      delegate_to: localhost
+      run_once: true
+      ignore_errors: yes
+
+    - name: Redis 연결 테스트 결과
+      debug:
+        msg: "Redis 연결: {{ 'SUCCESS' if redis_ping_result.rc == 0 else 'FAILED' }}"

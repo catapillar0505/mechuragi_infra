@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  author: Mechuragi Team
+  description: Spring Boot application deployment with Docker
+  company: Mechuragi
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+  galaxy_tags:
+    - application
+    - springboot
+    - docker
+
+dependencies:
+  - role: common
+  - role: docker

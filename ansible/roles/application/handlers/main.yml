@@ -1,0 +1,16 @@
+---
+- name: 애플리케이션 재시작
+  docker_compose:
+    project_src: "{{ app_directory }}"
+    state: present
+    restarted: yes
+
+- name: 애플리케이션 중지
+  docker_compose:
+    project_src: "{{ app_directory }}"
+    state: absent
+
+- name: 애플리케이션 시작
+  docker_compose:
+    project_src: "{{ app_directory }}"
+    state: present

@@ -1,0 +1,90 @@
+---
+- name: 메추라기 전체 서비스 배포
+  hosts: localhost
+  gather_facts: no
+  vars_prompt:
+    - name: "main_service_public_ip"
+      prompt: "메인 서비스 공인 IP"
+      private: no
+    - name: "ai_service_private_ip"
+      prompt: "AI 서비스 사설 IP"
+      private: no
+    - name: "mysql_private_ip"
+      prompt: "MySQL 사설 IP"
+      private: no
+    - name: "redis_private_ip"
+      prompt: "Redis 사설 IP"
+      private: no
+
+  tasks:
+    - name: 배포 계획 표시
+      debug:
+        msg: |
+          🚀 메추라기 분산 서비스 배포 시작
+          =====================================
+          메인 서비스: {{ main_service_public_ip }}
+          AI 서비스: {{ ai_service_private_ip }}
+          MySQL: {{ mysql_private_ip }}
+          Redis: {{ redis_private_ip }}
+
+    - name: 동적 IP 주소 설정
+      set_fact:
+        main_service_public_ip: "{{ main_service_public_ip }}"
+        ai_service_private_ip: "{{ ai_service_private_ip }}"
+        mysql_private_ip: "{{ mysql_private_ip }}"
+        redis_private_ip: "{{ redis_private_ip }}"
+
+# 1단계: 데이터베이스 레이어 구축
+- import_playbook: setup-database.yml
+
+# 2단계: 캐시 레이어 구축
+- import_playbook: setup-cache.yml
+
+# 3단계: AI 서비스 구축
+- import_playbook: setup-ai-service.yml
+
+# 4단계: 메인 서비스 구축
+- import_playbook: setup-main-service.yml
+
+# 5단계: 전체 서비스 검증
+- name: 전체 서비스 상태 검증
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: 서비스 준비 대기
+      pause:
+        seconds: 30
+
+    - name: MySQL 서비스 확인
+      wait_for:
+        host: "{{ mysql_private_ip }}"
+        port: 3306
+        timeout: 60
+      when: inventory_hostname in groups['database']
+
+    - name: Redis 서비스 확인
+      wait_for:
+        host: "{{ redis_private_ip }}"
+        port: "{{ redis_port }}"
+        timeout: 60
+      when: inventory_hostname in groups['cache']
+
+    - name: AI 서비스 확인
+      uri:
+        url: "http://{{ ai_service_private_ip }}:{{ ai_service_port }}/actuator/health"
+        method: GET
+        timeout: 30
+      when: inventory_hostname in groups['ai_service']
+      ignore_errors: yes
+
+    - name: 메인 서비스 확인
+      uri:
+        url: "http://{{ main_service_public_ip }}:{{ main_service_port }}/actuator/health"
+        method: GET
+        timeout: 30
+      when: inventory_hostname in groups['main_service']
+      ignore_errors: yes
+
+    - name: 배포 완료 메시지
+      debug:
+        msg: "✅ {{ inventory_hostname }} ({{ server_type }}) 서비스 검증 완료"
