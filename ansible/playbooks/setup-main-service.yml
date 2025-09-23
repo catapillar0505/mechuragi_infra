@@ -1,5 +1,5 @@
 ---
-- name: Setup Main Service (SpringBoot + AWS SES + S3) with Docker
+- name: 메인 서비스 구축 (SpringBoot + AWS SES + S3)
   hosts: main_service
   become: yes
   vars:

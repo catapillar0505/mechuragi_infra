@@ -1,5 +1,5 @@
 ---
-- name: Setup MySQL Database (Native Installation)
+- name: MySQL 데이터베이스 구축 (네이티브 설치)
   hosts: database
   become: yes
   vars:

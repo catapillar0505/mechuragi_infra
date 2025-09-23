@@ -1,5 +1,5 @@
 ---
-- name: Setup Redis Cache Server (Native Installation)
+- name: Redis 캐시 서버 구축 (네이티브 설치)
   hosts: cache
   become: yes
   vars:

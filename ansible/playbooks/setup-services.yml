@@ -1,9 +1,0 @@
----
-- name: 메추라기 서비스 구성 (Redis)
-  hosts: mechuragi-server
-  become: yes
-  gather_facts: yes
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - redis

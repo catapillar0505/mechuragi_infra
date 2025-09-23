@@ -1,5 +1,5 @@
 ---
-- name: Setup AI Recommendation Service (SpringBoot + AWS Bedrock) with Docker
+- name: AI 추천 서비스 구축 (SpringBoot + AWS Bedrock)
   hosts: ai_service
   become: yes
   vars:

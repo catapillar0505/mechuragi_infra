@@ -1,9 +1,77 @@
 ---
-- name: 메추라기 Docker 환경 구성
-  hosts: mechuragi-server
+- name: 도커 환경 구축
+  hosts: main_service:ai_service
   become: yes
-  gather_facts: yes
-  vars:
-    docker_compose_version: "v2.21.0"
-  roles:
-    - docker
+  tasks:
+    - name: 시스템 패키지 업데이트
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: 필수 패키지 설치
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Docker GPG 키 추가
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Docker 저장소 추가
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Docker 패키지 설치
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Docker 서비스 시작 및 활성화
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: ubuntu 사용자를 docker 그룹에 추가
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Docker Compose 설치
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Docker 상태 확인
+      systemd:
+        name: docker
+        state: started
+
+    - name: Docker 버전 확인
+      command: docker --version
+      register: docker_version
+
+    - name: Docker Compose 버전 확인
+      command: docker-compose --version
+      register: docker_compose_version_check
+
+    - name: Docker 설치 결과 출력
+      debug:
+        msg: |
+          Docker 설치 완료:
+          - Docker: {{ docker_version.stdout }}
+          - Docker Compose: {{ docker_compose_version_check.stdout }}

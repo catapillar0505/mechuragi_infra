@@ -1,5 +1,5 @@
 ---
-- name: Deploy Mechuragi Services to Distributed Infrastructure
+- name: 메추라기 서비스 분산 배포
   hosts: localhost
   gather_facts: no
   vars_prompt:
@@ -47,7 +47,7 @@
 - import_playbook: setup-main-service.yml
 
 # Phase 5: Verification
-- name: Verify Services
+- name: 서비스 상태 검증
   hosts: all
   gather_facts: no
   tasks:

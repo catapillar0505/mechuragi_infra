@@ -1,9 +1,0 @@
----
-- name: 메추라기 데이터베이스 초기화
-  hosts: mechuragi-server
-  become: yes
-  gather_facts: yes
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - mysql
