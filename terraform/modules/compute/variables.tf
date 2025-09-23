@@ -18,12 +18,32 @@ variable "key_pair_name" {
   type        = string
 }
 
-variable "security_group_id" {
-  description = "ID of the security group"
+variable "main_service_sg_id" {
+  description = "ID of the main service security group"
+  type        = string
+}
+
+variable "ai_service_sg_id" {
+  description = "ID of the AI service security group"
+  type        = string
+}
+
+variable "mysql_sg_id" {
+  description = "ID of the MySQL security group"
+  type        = string
+}
+
+variable "redis_sg_id" {
+  description = "ID of the Redis security group"
   type        = string
 }
 
 variable "public_subnet_id" {
   description = "ID of the public subnet"
+  type        = string
+}
+
+variable "private_subnet_id" {
+  description = "ID of the private subnet"
   type        = string
 }

@@ -1,11 +1,35 @@
-output "ec2_public_ip" {
-  description = "Public IP of the EC2 instance"
-  value       = module.compute.public_ip
+# 메인 서비스 EC2 정보
+output "main_service_public_ip" {
+  description = "Public IP of the main service EC2 instance"
+  value       = module.compute.main_service_public_ip
 }
 
-output "ssh_command" {
-  description = "SSH command to connect to the instance"
-  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem ubuntu@${module.compute.public_ip}"
+output "main_service_private_ip" {
+  description = "Private IP of the main service EC2 instance"
+  value       = module.compute.main_service_private_ip
+}
+
+output "main_service_ssh_command" {
+  description = "SSH command to connect to the main service instance"
+  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem ubuntu@${module.compute.main_service_public_ip}"
+}
+
+# AI 추천 서비스 EC2 정보
+output "ai_service_private_ip" {
+  description = "Private IP of the AI service EC2 instance"
+  value       = module.compute.ai_service_private_ip
+}
+
+# MySQL EC2 정보
+output "mysql_private_ip" {
+  description = "Private IP of the MySQL EC2 instance"
+  value       = module.compute.mysql_private_ip
+}
+
+# Redis EC2 정보
+output "redis_private_ip" {
+  description = "Private IP of the Redis EC2 instance"
+  value       = module.compute.redis_private_ip
 }
 
 output "s3_bucket_name" {

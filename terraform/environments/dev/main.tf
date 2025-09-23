@@ -42,13 +42,17 @@ module "security" {
 # EC2 모듈 호출
 module "compute" {
   source = "../../modules/compute"
-  
-  project_name      = var.project_name
-  environment       = var.environment
-  instance_type     = var.instance_type
-  key_pair_name     = var.key_pair_name
-  security_group_id = module.security.web_sg_id
-  public_subnet_id  = module.vpc.public_subnet_id
+
+  project_name         = var.project_name
+  environment          = var.environment
+  instance_type        = var.instance_type
+  key_pair_name        = var.key_pair_name
+  main_service_sg_id   = module.security.main_service_sg_id
+  ai_service_sg_id     = module.security.ai_service_sg_id
+  mysql_sg_id          = module.security.mysql_sg_id
+  redis_sg_id          = module.security.redis_sg_id
+  public_subnet_id     = module.vpc.public_subnet_id
+  private_subnet_id    = module.vpc.private_subnet_id
 }
 
 # S3 모듈 호출

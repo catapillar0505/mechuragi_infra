@@ -6,14 +6,32 @@
     state: present
   become: yes
 
-# Python 라이브러리 설치
-- name: 2. Python AWS SDK 설치
+# 스왑 파일 생성 (메모리 부족 방지)
+- name: 1-1. 스왑 파일 생성
+  shell: |
+    fallocate -l 1G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  args:
+    creates: /swapfile
+  become: yes
+
+# Python 라이브러리 개별 설치 (메모리 절약)
+- name: 2-1. Python AWS SDK 설치 (boto3)
   pip:
-    name:
-      - boto3
-      - botocore
+    name: boto3
     state: present
     executable: pip3
+    extra_args: "--no-cache-dir --disable-pip-version-check"
+
+- name: 2-2. Python AWS SDK 설치 (botocore)
+  pip:
+    name: botocore
+    state: present
+    executable: pip3
+    extra_args: "--no-cache-dir --disable-pip-version-check"
 
 # 설정 디렉토리 생성
 - name: 3. 설정 디렉토리 생성
