@@ -22,11 +22,6 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "instance_type" {
-  description = "EC2 instance type"
-  type        = string
-  default     = "t3.micro"
-}
 
 variable "key_pair_name" {
   description = "EC2 Key Pair name"
@@ -37,13 +32,13 @@ variable "key_pair_name" {
 variable "ses_domain" {
   description = "Domain for SES (optional)"
   type        = string
-  default     = ""
+  default     = "mechuragi.kro.kr"
 }
 
 variable "ses_from_email" {
   description = "From email address for SES"
   type        = string
-  default     = "noreply@your-domain.com"
+  default     = "mechuragi001@gmail.com"
 }
 
 # Bedrock Variables (프리티어 설정)

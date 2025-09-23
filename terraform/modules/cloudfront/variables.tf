@@ -22,3 +22,9 @@ variable "s3_bucket_arn" {
   description = "ARN of the S3 bucket"
   type        = string
 }
+
+variable "web_domain" {
+  description = "Domain for web"
+  type        = string
+  default     = "mechuragi.kro.kr"
+}

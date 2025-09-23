@@ -22,7 +22,7 @@ data "aws_ami" "ubuntu" {
 # 메인 서비스용 EC2 인스턴스 (Docker)
 resource "aws_instance" "main_service" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = var.main_service_instance_type
   key_name               = var.key_pair_name
   vpc_security_group_ids = [var.main_service_sg_id]
   subnet_id              = var.public_subnet_id
@@ -42,10 +42,11 @@ resource "aws_instance" "main_service" {
 # AI 추천 서비스용 EC2 인스턴스 (Docker)
 resource "aws_instance" "ai_service" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = var.ai_service_instance_type
   key_name               = var.key_pair_name
   vpc_security_group_ids = [var.ai_service_sg_id]
-  subnet_id              = var.private_subnet_id
+  subnet_id              = var.public_subnet_id
+  iam_instance_profile   = var.bedrock_instance_profile_name  # Bedrock 권한 필요
 
   root_block_device {
     volume_type = "gp3"
@@ -62,14 +63,14 @@ resource "aws_instance" "ai_service" {
 # MySQL 데이터베이스용 EC2 인스턴스 (네이티브)
 resource "aws_instance" "mysql" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = var.mysql_instance_type
   key_name               = var.key_pair_name
   vpc_security_group_ids = [var.mysql_sg_id]
-  subnet_id              = var.private_subnet_id
+  subnet_id              = var.public_subnet_id
 
   root_block_device {
     volume_type = "gp3"
-    volume_size = 30
+    volume_size = var.mysql_volume_size
     encrypted   = true
   }
 
@@ -82,10 +83,10 @@ resource "aws_instance" "mysql" {
 # Redis 캐시 서버용 EC2 인스턴스 (네이티브)
 resource "aws_instance" "redis" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = var.redis_instance_type
   key_name               = var.key_pair_name
   vpc_security_group_ids = [var.redis_sg_id]
-  subnet_id              = var.private_subnet_id
+  subnet_id              = var.public_subnet_id
 
   root_block_device {
     volume_type = "gp3"

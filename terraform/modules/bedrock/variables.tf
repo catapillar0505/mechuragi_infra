@@ -11,13 +11,13 @@ variable "environment" {
 variable "chat_model_id" {
   description = "Bedrock model ID for chat (fast model)"
   type        = string
-  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+  default     = "anthropic.claude-instant-v1"
 }
 
 variable "smart_model_id" {
   description = "Bedrock model ID for smart responses (high-quality model)"
   type        = string
-  default     = "anthropic.claude-3-sonnet-20240229-v1:0"
+  default     = "anthropic.claude-instant-v1"
 }
 
 variable "embedding_model_id" {
