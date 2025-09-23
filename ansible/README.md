@@ -2,7 +2,7 @@
 
 ## 📋 개요
 
-메추라기 분산 인프라를 위한 Ansible Roles 기반 구조입니다. 각 서비스별로 재사용 가능한 roles로 분리하여 책임을 명확히 하고 유지보수성을 향상시켰습니다.
+메추라기 분산 인프라를 위한 Ansible Roles 기반 구조입니다. 각 서비스별로 재사용 가능한 roles로 분리하고, 단순한 변수 관리를 통해 책임을 명확히 하고 유지보수성을 향상시켰습니다.
 
 ## 📁 디렉토리 구조
 
@@ -10,10 +10,21 @@
 ansible/
 ├── README.md                          # 이 가이드 파일
 ├── ansible.cfg                        # Ansible 설정
-├── group_vars/
-│   └── all.yml                        # 전역 변수
-├── inventory/
-│   └── hosts.yml                      # 4개 서버 인벤토리
+├── group_vars/                        # 🌐 전역 변수
+│   ├── all/
+│   │   ├── common.yml                 # 프로젝트 공통 설정
+│   │   ├── networking.yml             # 네트워크 설정
+│   │   └── aws.yml                    # AWS 서비스 설정
+│   ├── main_service/
+│   │   └── application.yml            # 메인 서비스 설정
+│   ├── ai_service/
+│   │   └── application.yml            # AI 서비스 설정
+│   ├── database/
+│   │   └── mysql.yml                  # MySQL 설정 (비밀번호 포함)
+│   └── cache/
+│       └── redis.yml                  # Redis 설정
+├── inventory/                         # 📦 서버 인벤토리
+│   └── hosts.yml                      # 서버 목록
 ├── roles/                             # 🎭 재사용 가능한 역할들
 │   ├── common/                        # 시스템 공통 설정
 │   ├── docker/                        # Docker 환경 구축
@@ -28,6 +39,7 @@ ansible/
 │   ├── setup-main-service.yml        # 메인 서비스
 │   ├── deploy-all-services.yml       # 🚀 전체 배포
 │   └── backup/                       # 기존 플레이북 백업
+├── group_vars_backup/                 # 기존 group_vars 백업
 └── templates_backup/                  # 기존 템플릿 백업
 ```
 
@@ -91,9 +103,35 @@ ansible/
 
 ## 🚀 플레이북 실행 순서
 
+### 권장 실행 순서
+1. **데이터베이스 구축** → MySQL 서버 설정
+2. **캐시 서버 구축** → Redis 서버 설정
+3. **AI 추천 서비스** → AI 서비스 배포
+4. **메인 서비스** → 메인 애플리케이션 배포
+
+또는 **전체 자동 배포**로 한 번에 모든 서비스를 배포할 수 있습니다.
+
+## 🌍 변수 관리
+
+### 변수 우선순위 (높음 → 낮음)
+1. **명령행 변수** (`-e key=value`)
+2. **전역 group_vars** (`group_vars/`)
+3. **Role defaults** (`roles/{role}/defaults/main.yml`)
+
+### 성능 설정 (t3.small 최적화)
+
+| 구분 | 설정값 |
+|------|--------|
+| **인스턴스** | t3.small |
+| **MySQL 메모리** | 1GB |
+| **Redis 메모리** | 1GB |
+| **연결 수** | 100/100 |
+| **로그 레벨** | INFO |
+| **백업 주기** | 일간 |
+
 ### 📝 사전 준비
 
-1. **인벤토리 파일 IP 업데이트**
+1. **인벤토리 IP 업데이트**
    ```bash
    # Terraform 출력에서 IP 주소 확인
    cd ../terraform/environments/dev
@@ -112,29 +150,29 @@ ansible/
 ### 🎯 실행 방법
 
 #### 1단계: 전체 자동 배포 (권장) ⭐
+
 ```bash
-# 모든 서비스를 순서대로 자동 배포
 ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml
 ```
 
-#### 2단계: 개별 서비스 배포 (필요시)
+#### 2단계: 개별 서비스 배포
 
-**① 데이터베이스 구축**
+**데이터베이스 구축**
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml
 ```
 
-**② 캐시 서버 구축**
+**캐시 서버 구축**
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml
 ```
 
-**③ AI 추천 서비스 구축**
+**AI 추천 서비스 구축**
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/setup-ai-service.yml
 ```
 
-**④ 메인 서비스 구축**
+**메인 서비스 구축**
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/setup-main-service.yml
 ```
@@ -152,11 +190,11 @@ ansible-playbook -i inventory/hosts.yml playbooks/setup-main-service.yml --tags 
 
 ### 변수 오버라이드
 ```bash
-# MySQL 비밀번호 변경
+# MySQL 비밀번호 임시 변경
 ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml -e "mysql_root_password=newpassword"
 
-# Redis 메모리 제한 변경
-ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml -e "redis_maxmemory=2gb"
+# Redis 메모리 제한 임시 변경
+ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml -e "redis_maxmemory=4gb"
 ```
 
 ### 특정 호스트만 대상
@@ -166,6 +204,12 @@ ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --limit dat
 
 # 메인 서비스만
 ansible-playbook -i inventory/hosts.yml playbooks/setup-main-service.yml --limit main_service
+```
+
+### 변수 확인
+```bash
+# 변수 확인
+ansible-inventory -i inventory/hosts.yml --host mysql-server --vars
 ```
 
 ## 📏 Roles 작성 규칙
@@ -213,7 +257,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --force-han
 ### 템플릿 문제
 ```bash
 # 템플릿 렌더링 테스트
-ansible-playbook -i inventory/hosts.yml playbooks/setup-mysql.yml --check -v
+ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --check -v
 ```
 
 ### 변수 확인
@@ -231,9 +275,10 @@ ansible-inventory -i inventory/hosts.yml --host mysql-server --vars
 - **Application**: 로그 크기 제한, 헬스체크
 
 ### 보안 설정
-- 비밀번호는 `defaults/main.yml`에서 관리
+- 비밀번호는 `group_vars/database/mysql.yml`에서 관리
 - 템플릿에서 민감 정보 마스킹
 - 파일 권한 엄격 설정 (600/640)
+- SSH 점프 박스를 통한 보안 접근
 
 ## 📈 확장 가이드
 
@@ -249,4 +294,17 @@ ansible-inventory -i inventory/hosts.yml --host mysql-server --vars
 3. `templates/`에서 설정 파일 업데이트
 4. 테스트 후 배포
 
-이제 재사용성과 유지보수성이 크게 향상된 Ansible 구조로 메추라기 인프라를 관리할 수 있습니다! 🚀
+## 🏗️ 인프라 구조
+
+### 4개 서버 분산 구조
+- **메인 서비스 서버** (Public): Spring Boot + AWS SES + S3
+- **AI 서비스 서버** (Private): Spring Boot + AWS Bedrock
+- **MySQL 서버** (Private): 네이티브 MySQL 설치
+- **Redis 서버** (Private): 네이티브 Redis 설치
+
+### 네트워크 구성
+- 메인 서비스만 Public IP 보유
+- 나머지 서버들은 SSH 점프 박스를 통해 접근
+- 내부 통신은 Private IP 사용
+
+이제 재사용성과 유지보수성이 크게 향상된 Ansible 구조로 메추라기 분산 인프라를 관리할 수 있습니다! 🚀
