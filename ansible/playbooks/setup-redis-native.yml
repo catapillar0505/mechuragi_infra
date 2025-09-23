@@ -1,0 +1,115 @@
+---
+- name: Setup Redis Cache Server (Native Installation)
+  hosts: cache
+  become: yes
+  vars:
+    service_name: "redis"
+
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install required packages
+      apt:
+        name:
+          - redis-server
+          - unzip
+          - curl
+        state: present
+
+    - name: Create Redis configuration file
+      template:
+        src: templates/redis.conf.j2
+        dest: /etc/redis/redis.conf
+        backup: yes
+        owner: redis
+        group: redis
+        mode: '0640'
+      notify: restart redis
+
+    - name: Create Redis data directory
+      file:
+        path: /var/lib/redis
+        state: directory
+        owner: redis
+        group: redis
+        mode: '0755'
+
+    - name: Create Redis log directory
+      file:
+        path: /var/log/redis
+        state: directory
+        owner: redis
+        group: redis
+        mode: '0755'
+
+    - name: Setup Redis systemd override
+      template:
+        src: templates/redis-override.conf.j2
+        dest: /etc/systemd/system/redis-server.service.d/override.conf
+        mode: '0644'
+      notify:
+        - reload systemd
+        - restart redis
+
+    - name: Start and enable Redis
+      systemd:
+        name: redis-server
+        state: started
+        enabled: yes
+
+    - name: Create Redis backup directory
+      file:
+        path: /var/backups/redis
+        state: directory
+        owner: redis
+        group: redis
+        mode: '0700'
+
+    - name: Setup Redis backup script
+      template:
+        src: templates/redis-backup.sh.j2
+        dest: /usr/local/bin/redis-backup.sh
+        mode: '0700'
+        owner: root
+        group: root
+
+    - name: Setup Redis backup cron job
+      cron:
+        name: "Redis backup"
+        minute: "30"
+        hour: "2"
+        job: "/usr/local/bin/redis-backup.sh"
+        user: root
+
+    - name: Setup log rotation for Redis
+      template:
+        src: templates/redis-logrotate.j2
+        dest: /etc/logrotate.d/redis-server
+        mode: '0644'
+
+    - name: Configure kernel memory overcommit
+      sysctl:
+        name: vm.overcommit_memory
+        value: '1'
+        state: present
+        sysctl_file: /etc/sysctl.d/redis.conf
+
+    - name: Disable transparent huge pages
+      lineinfile:
+        path: /etc/rc.local
+        line: 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+        create: yes
+        mode: '0755'
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: restart redis
+      systemd:
+        name: redis-server
+        state: restarted

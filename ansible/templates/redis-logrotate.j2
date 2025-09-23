@@ -1,0 +1,12 @@
+/var/log/redis/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 redis redis
+    postrotate
+        systemctl reload redis-server
+    endscript
+}
