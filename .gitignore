@@ -9,6 +9,7 @@
 *.retry
 
 # Ansible 민감한 변수 파일들
-ansible/group_vars/all.yml
+ansible/group_vars/
+ansible/group_vars_backup/
+ansible/inventory/
 ansible/host_vars/
-ansible/inventory/hosts.yml

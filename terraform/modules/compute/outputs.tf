@@ -20,6 +20,11 @@ output "ai_service_instance_id" {
   value       = aws_instance.ai_service.id
 }
 
+output "ai_service_public_ip" {
+  description = "Public IP address of the AI service instance"
+  value       = aws_instance.ai_service.public_ip
+}
+
 output "ai_service_private_ip" {
   description = "Private IP address of the AI service instance"
   value       = aws_instance.ai_service.private_ip
@@ -31,6 +36,11 @@ output "mysql_instance_id" {
   value       = aws_instance.mysql.id
 }
 
+output "mysql_public_ip" {
+  description = "Public IP address of the MySQL instance"
+  value       = aws_instance.mysql.public_ip
+}
+
 output "mysql_private_ip" {
   description = "Private IP address of the MySQL instance"
   value       = aws_instance.mysql.private_ip
@@ -40,6 +50,11 @@ output "mysql_private_ip" {
 output "redis_instance_id" {
   description = "ID of the Redis EC2 instance"
   value       = aws_instance.redis.id
+}
+
+output "redis_public_ip" {
+  description = "Public IP address of the Redis instance"
+  value       = aws_instance.redis.public_ip
 }
 
 output "redis_private_ip" {

@@ -15,18 +15,33 @@ output "main_service_ssh_command" {
 }
 
 # AI 추천 서비스 EC2 정보
+output "ai_service_public_ip" {
+  description = "Public IP of the AI service EC2 instance"
+  value       = module.compute.ai_service_public_ip
+}
+
 output "ai_service_private_ip" {
   description = "Private IP of the AI service EC2 instance"
   value       = module.compute.ai_service_private_ip
 }
 
 # MySQL EC2 정보
+output "mysql_public_ip" {
+  description = "Public IP of the MySQL EC2 instance"
+  value       = module.compute.mysql_public_ip
+}
+
 output "mysql_private_ip" {
   description = "Private IP of the MySQL EC2 instance"
   value       = module.compute.mysql_private_ip
 }
 
 # Redis EC2 정보
+output "redis_public_ip" {
+  description = "Public IP of the Redis EC2 instance"
+  value       = module.compute.redis_public_ip
+}
+
 output "redis_private_ip" {
   description = "Private IP of the Redis EC2 instance"
   value       = module.compute.redis_private_ip

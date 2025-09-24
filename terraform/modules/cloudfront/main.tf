@@ -1,61 +1,83 @@
-# CloudFront Origin Access Control
-# S3 버킷에 대한 CloudFront의 접근을 제어합니다.
-resource "aws_cloudfront_origin_access_control" "s3_oac" {
-  name                              = "${var.project_name}-${var.environment}-oac"
-  description                       = "${var.project_name} S3 버킷용 OAC"
+# 프론트엔드 S3 버킷용 Origin Access Control
+resource "aws_cloudfront_origin_access_control" "frontend_oac" {
+  name                              = "${var.project_name}-${var.environment}-frontend-oac"
+  description                       = "React 프론트엔드 S3 버킷용 OAC"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+# 이미지 S3 버킷용 Origin Access Control
+resource "aws_cloudfront_origin_access_control" "images_oac" {
+  name                              = "${var.project_name}-${var.environment}-images-oac"
+  description                       = "이미지 저장소 S3 버킷용 OAC"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
 }
 
 # CloudFront Distribution
-resource "aws_cloudfront_distribution" "s3_distribution" {
-  # S3 버킷을 위한 첫 번째 오리진 (정적 파일)
+resource "aws_cloudfront_distribution" "main_distribution" {
+  # React 프론트엔드 S3 버킷 오리진
   origin {
-    domain_name              = var.s3_bucket_domain_name
-    origin_id                = "${var.s3_bucket_name}-origin"
-    origin_access_control_id = aws_cloudfront_origin_access_control.s3_oac.id
+    domain_name              = var.s3_frontend_bucket_domain_name
+    origin_id                = "frontend-origin"
+    origin_access_control_id = aws_cloudfront_origin_access_control.frontend_oac.id
   }
 
-  # ec2를 위한 새로운 오리진 추가
+  # 이미지 S3 버킷 오리진
   origin {
-    domain_name = var.web_domain # 백엔드 서버의 도메인 이름
+    domain_name              = var.s3_images_bucket_domain_name
+    origin_id                = "images-origin"
+    origin_access_control_id = aws_cloudfront_origin_access_control.images_oac.id
+  }
+
+  # Spring Boot API 서버 오리진
+  origin {
+    domain_name = var.web_domain
     origin_id   = "api-origin"
+
+    custom_origin_config {
+      http_port              = 8080
+      https_port             = 443
+      origin_protocol_policy = "http-only"  # EC2는 HTTP로 접근
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
   }
 
   enabled             = true
   is_ipv6_enabled     = true
-  default_root_object = "index.html" # SPA 라우팅을 위해 index.html을 기본 객체로 설정
-  comment             = "${var.project_name}의 CloudFront 배포"
-  price_class         = "PriceClass_100"
+  default_root_object = "index.html"  # React SPA의 메인 페이지
+  comment             = "${var.project_name} React 프론트엔드 + 이미지 CDN"
+  price_class         = "PriceClass_100"  # 아시아/북미/유럽 지역만
 
-  # 기본 캐시 동작 (React SPA 정적 파일에 적용)
+  # React SPA 기본 캐시 동작 (모든 정적 파일에 적용)
   default_cache_behavior {
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "${var.s3_bucket_name}-origin"
-    compress               = true # Gzip 압축 활성화
-    viewer_protocol_policy = "redirect-to-https" # HTTPS로 강제 리디렉션
+    target_origin_id       = "frontend-origin"
+    compress               = true
+    viewer_protocol_policy = "redirect-to-https"
 
     forwarded_values {
-      query_string = false
+      query_string = false  # SPA 정적 파일에는 쿼리 파라미터 불필요
       cookies {
         forward = "none"
       }
     }
 
     min_ttl     = 0
-    default_ttl = 86400 # 1일
-    max_ttl     = 31536000 # 1년
+    default_ttl = 86400     # 1일
+    max_ttl     = 31536000  # 1년
   }
 
-  # 이미지 파일에 대한 캐시 동작
+  # 이미지 파일 캐시 동작 (이미지 S3 버킷에서 제공)
   ordered_cache_behavior {
-    path_pattern         = "/images/*"
-    allowed_methods      = ["GET", "HEAD"]
-    cached_methods       = ["GET", "HEAD"]
-    target_origin_id     = "${var.s3_bucket_name}-origin"
-    compress             = true
+    path_pattern           = "/images/*"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "images-origin"
+    compress               = true
     viewer_protocol_policy = "redirect-to-https"
 
     forwarded_values {
@@ -65,29 +87,29 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
       }
     }
 
-    min_ttl     = 86400 # 1일
-    default_ttl = 604800 # 1주일
-    max_ttl     = 31536000 # 1년
+    min_ttl     = 86400     # 1일
+    default_ttl = 604800    # 1주일
+    max_ttl     = 31536000  # 1년
   }
 
-  # API에 대한 캐시 동작 (캐싱 없음, 새로운 API 오리진 지정)
+  # Spring Boot API 캐시 동작 (EC2 서버로 프록시)
   ordered_cache_behavior {
-    path_pattern         = "/api/*"
-    allowed_methods      = ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"] # 모든 메서드 허용
-    cached_methods       = ["GET", "HEAD"] # 필요에 따라 캐시 가능 메서드를 지정하거나 생략
-    target_origin_id     = "api-origin" # **중요: API 백엔드 오리진으로 변경**
-    compress             = true # 압축 허용
+    path_pattern           = "/api/*"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "api-origin"
+    compress               = false  # API 응답은 압축 비활성화 게 나음
     viewer_protocol_policy = "redirect-to-https"
 
     forwarded_values {
-      query_string = true # 쿼리 파라미터 전달
-      headers      = ["*"] # 모든 헤더 전달
+      query_string = true  # API 쿼리 파라미터 전달
+      headers      = ["Authorization", "Content-Type", "Accept"]  # 필수 헤더만 전달
       cookies {
-        forward = "all" # 모든 쿠키 전달
+        forward = "all"  # 세션 및 인증 쿠키 전달
       }
     }
 
-    min_ttl     = 0 # 캐싱하지 않음
+    min_ttl     = 0  # API는 캐싱 비활성화
     default_ttl = 0
     max_ttl     = 0
   }
@@ -122,27 +144,50 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   }
 }
 
-# S3 버킷 정책은 CloudFront를 통해서만 접근을 허용하므로 괜찮습니다.
-# API 오리진은 이 정책의 적용을 받지 않습니다.
-data "aws_iam_policy_document" "s3_bucket_policy" {
+# 프론트엔드 S3 버킷 정책: CloudFront OAC를 통해서만 접근 허용
+data "aws_iam_policy_document" "frontend_bucket_policy" {
   statement {
-    sid    = "AllowCloudFrontServicePrincipal"
+    sid    = "AllowCloudFrontServicePrincipalForFrontend"
     effect = "Allow"
     principals {
       type        = "Service"
       identifiers = ["cloudfront.amazonaws.com"]
     }
     actions   = ["s3:GetObject"]
-    resources = ["${var.s3_bucket_arn}/*"]
+    resources = ["${var.s3_frontend_bucket_arn}/*"]
     condition {
       test     = "StringEquals"
       variable = "AWS:SourceArn"
-      values   = [aws_cloudfront_distribution.s3_distribution.arn]
+      values   = [aws_cloudfront_distribution.main_distribution.arn]
     }
   }
 }
 
-resource "aws_s3_bucket_policy" "s3_bucket_policy" {
-  bucket = var.s3_bucket_name
-  policy = data.aws_iam_policy_document.s3_bucket_policy.json
+resource "aws_s3_bucket_policy" "frontend_bucket_policy" {
+  bucket = var.s3_frontend_bucket_name
+  policy = data.aws_iam_policy_document.frontend_bucket_policy.json
+}
+
+# 이미지 S3 버킷 정책: CloudFront OAC를 통해서만 접근 허용
+data "aws_iam_policy_document" "images_bucket_policy" {
+  statement {
+    sid    = "AllowCloudFrontServicePrincipalForImages"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    actions   = ["s3:GetObject"]
+    resources = ["${var.s3_images_bucket_arn}/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.main_distribution.arn]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "images_bucket_policy" {
+  bucket = var.s3_images_bucket_name
+  policy = data.aws_iam_policy_document.images_bucket_policy.json
 }

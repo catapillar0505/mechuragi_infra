@@ -1,223 +1,334 @@
 # Mechuragi Infrastructure
 
-메추라기 프로젝트의 AWS 인프라스트럭처를 관리하는 저장소입니다. Terraform과 Ansible을 사용하여 클라우드 인프라의 프로비저닝과 서버 설정을 자동화합니다.
+메추라기 프로젝트의 **분산 마이크로서비스 아키텍처**를 구현하는 AWS 인프라 저장소입니다. Terraform과 Ansible을 사용하여 React 프론트엔드와 Spring Boot 백엔드의 최적화된 배포 환경을 제공합니다.
 
-## 🏗️ 프로젝트 구조
+## 🏗️ 아키텍처 개요
+
+### 분산 서비스 구조 (4개 인스턴스 + React CDN)
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   React 앱      │    │  메인 서비스      │    │  AI 추천 서비스   │
+│  (S3+CloudFront)│ ←→ │ (Spring Boot)   │ ←→ │ (Spring Boot)   │
+│                 │    │   + SES         │    │   + Bedrock     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         ↕                      ↕                      ↕
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   이미지 CDN    │    │   MySQL DB      │    │   Redis Cache   │
+│   (CloudFront)   │    │   (Database)    │    │   (Cache)       │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### 네트워크 보안 설계
+- **Public Subnet** (10.0.2.0/24): 모든 서비스 배치 (비용 최적화)
+- **보안 그룹 4계층**: 서비스별 차별화된 접근 제어
+  - **Level 1**: Main Service → 인터넷 전체 허용
+  - **Level 2**: AI/DB/Cache → VPC 내부만 허용 (10.0.0.0/16)
+
+## 📁 프로젝트 구조
 
 ```
 mechuragi-infra/
-├── terraform/                          # AWS 인프라 프로비저닝
+├── terraform/                          # 🏗️ AWS 인프라 프로비저닝
+│   ├── README.md                       # Terraform 상세 가이드
 │   ├── environments/
-│   │   └── dev/                        # 개발 환경 설정
-│   │       ├── main.tf                 # 메인 테라폼 설정
+│   │   └── dev/                        # 개발 환경 (통합 구조)
+│   │       ├── main.tf                 # 메인 설정
 │   │       ├── variables.tf            # 변수 정의
-│   │       ├── outputs.tf              # 출력 값 정의
-│   │       └── terraform.tfvars.example # 변수 예시 파일
-│   └── modules/                        # 재사용 가능한 테라폼 모듈
-│       ├── vpc/                        # VPC 및 네트워크 구성
-│       ├── security/                   # 보안 그룹 설정
-│       ├── compute/                    # EC2 인스턴스 설정
-│       ├── s3/                         # S3 버킷 설정
-│       ├── cloudfront/                 # CloudFront CDN 배포
-│       ├── ses/                        # SES 이메일 서비스
-│       └── bedrock/                    # Bedrock AI 서비스
-└── ansible/                            # 서버 구성 관리
+│   │       ├── outputs.tf              # 출력 값
+│   │       └── terraform.tfvars        # 실제 변수 값
+│   └── modules/                        # 📦 재사용 가능한 모듈
+│       ├── vpc/                        # Public 서브넷 네트워크
+│       ├── security/                   # 4계층 보안 그룹
+│       ├── compute/                    # 4개 분산 인스턴스
+│       ├── s3/                         # Frontend + Images 버킷
+│       ├── cloudfront/                 # 3-Origin CDN
+│       ├── ses/                        # 이메일 서비스 + 템플릿
+│       └── bedrock/                    # AI 서비스 연동
+└── ansible/                            # ⚙️ 서버 구성 관리
     ├── README.md                       # Ansible 실행 가이드
     ├── ansible.cfg                     # Ansible 설정
     ├── group_vars/
-    │   └── all.yml                     # 변수 설정 (Git 제외)
+    │   └── all/
+    │       └── common.yml              # 통합 변수 설정
     ├── inventory/
-    │   ├── hosts.yml                   # 서버 인벤토리 (Git 제외)
-    │   └── hosts.yml.template          # 인벤토리 템플릿
-    └── playbooks/                      # 모듈화된 플레이북
+    │   └── hosts.yml                   # 4개 서버 인벤토리
+    ├── roles/                          # 🔧 Ansible 역할
+    │   ├── common/                     # 기본 시스템 설정
+    │   ├── docker/                     # Docker 환경
+    │   ├── mysql/                      # MySQL 데이터베이스
+    │   ├── redis/                      # Redis 캐시
+    │   ├── nginx/                      # 웹 서버 (역방향 프록시)
+    │   └── application/                # Spring Boot 애플리케이션
+    └── playbooks/                      # 🎮 실행 플레이북
         ├── setup-system.yml           # 시스템 기본 설정
-        ├── setup-docker.yml           # Docker 환경 구성
-        ├── setup-services.yml         # MySQL, Redis 서비스
-        ├── setup-database.yml         # 데이터베이스 초기화
-        ├── setup-aws-services.yml     # AWS 서비스 연동 (서버 측)
-        ├── verify-setup.yml           # 설정 검증
-        └── setup-server.yml.backup    # 기존 통합 플레이북 백업
+        ├── setup-docker.yml           # Docker 환경
+        ├── setup-services.yml         # MySQL + Redis
+        ├── setup-applications.yml     # Spring Boot 앱들
+        └── verify-setup.yml           # 전체 검증
 ```
 
 ## 🏛️ 인프라 구성
 
-### AWS 리소스
+### AWS 핵심 리소스
 
-#### 핵심 인프라
+#### 🌐 네트워크 (VPC 모듈)
 - **VPC**: 10.0.0.0/16 CIDR 블록
-  - Public Subnet: 10.0.1.0/24 (ap-northeast-2a)
-  - Private Subnet: 10.0.10.0/24 (ap-northeast-2b)
-- **EC2**: Amazon Linux 2, t3.micro 인스턴스 (EBS 암호화)
-- **보안 그룹**: HTTP(80), HTTPS(443), SSH(22), Spring Boot(8080), MySQL(3306), Redis(6379)
-- **S3**: 이미지 저장용 버킷 (CORS 설정, 버전 관리 활성화)
-- **Elastic IP**: 고정 공인 IP 할당
+- **Public Subnet**: 10.0.2.0/24 (모든 인스턴스 배치)
+- **Internet Gateway**: 직접 인터넷 연결
+- **🔥 NAT Gateway 제거**: 월 $45 비용 절감
 
-#### AWS 외부 서비스
-- **CloudFront**: CDN 배포 (S3 연동, 캐시 정책 설정)
-- **SES**: 이메일 서비스 (템플릿, 설정 세트)
-- **Bedrock**: AI 서비스 (Claude 3, Titan 임베딩)
+#### 💻 컴퓨팅 (Compute 모듈)
+- **메인 서비스**: t3.micro (Public IP + Elastic IP)
+- **AI 서비스**: t3.small (Bedrock IAM Profile)
+- **MySQL 서버**: t3.micro (30GB gp3 볼륨)
+- **Redis 서버**: t3.micro (캐시 전용)
+- **🔥 75% 비용 절감**: 3개 서비스를 t3.micro로 최적화
 
-### 서버 소프트웨어
+#### 🛡️ 보안 (Security 모듈)
+- **Main Service SG**: HTTP(80), HTTPS(443), SSH(22), Spring(8080)
+- **AI Service SG**: Spring(8081), SSH(22) - VPC 내부만
+- **MySQL SG**: MySQL(3306), SSH(22) - VPC 내부만
+- **Redis SG**: Redis(6379), SSH(22) - VPC 내부만
 
-- **Docker & Docker Compose**: 컨테이너 관리
+#### 🗄️ 스토리지 (S3 모듈)
+- **Frontend Bucket**: `mechuragi-dev-frontend` (React SPA)
+- **Images Bucket**: `mechuragi-dev-images` (이미지 저장)
+- **암호화**: AES-256 서버 측 암호화
+- **보안**: CloudFront OAC를 통해서만 접근 허용
+
+#### 🌍 CDN (CloudFront 모듈)
+- **3-Origin 구조**:
+  - Frontend Origin: React 정적 파일 (S3)
+  - Images Origin: 이미지 파일 (S3)
+  - API Origin: Spring Boot API (EC2:8080)
+- **캐시 정책**: 용도별 차별화된 TTL 설정
+- **SPA 지원**: 404 → index.html 리디렉션
+
+#### 📧 이메일 (SES 모듈)
+- **도메인 검증**: mechuragi.kro.kr
+- **이메일 템플릿**: 환영 메일, 비밀번호 재설정
+- **DKIM 설정**: 이메일 인증 강화
+- **모니터링**: Configuration Set
+
+#### 🧠 AI 서비스 (Bedrock 모듈)
+- **Claude 3 Sonnet**: 대화형 AI
+- **Titan Text Embeddings**: 벡터 임베딩
+- **IAM 권한**: Bedrock 전체 접근
+- **로깅**: CloudWatch (14일 보존)
+
+### 서버 소프트웨어 스택
+
+#### 🐳 컨테이너 환경
+- **Docker & Docker Compose**: 컨테이너 오케스트레이션
 - **MySQL 8.0**: Docker 컨테이너로 실행
-- **Redis 6**: 시스템 서비스로 실행
+- **Redis 6**: 시스템 서비스로 경량 실행
+
+#### ⚙️ 시스템 도구
 - **개발 도구**: git, curl, wget, vim, htop
+- **모니터링**: htop, docker stats
+- **네트워크**: UFW 방화벽 (기본 비활성화)
 
-## 🚀 사용 방법
+## 🚀 배포 가이드
 
-### 1단계: Terraform으로 인프라 프로비저닝
+### 📝 사전 준비
+
+1. **AWS 설정**
+   ```bash
+   aws configure
+   # AdministratorAccess 권한 필요
+   ```
+
+2. **도구 설치**
+   ```bash
+   # Terraform 1.0+
+   terraform version
+
+   # Ansible 2.9+
+   ansible --version
+   ```
+
+3. **SSH 키 준비**
+   ```bash
+   # AWS 콘솔에서 mechuragi-dev-key 생성
+   chmod 400 ~/.ssh/mechuragi-dev-key.pem
+   ```
+
+### 🎯 1단계: Terraform 인프라 배포
 
 ```bash
-# 1. 변수 파일 설정
+# 1. 환경 설정
 cd terraform/environments/dev
 cp terraform.tfvars.example terraform.tfvars
-# terraform.tfvars에서 실제 값 입력
+vi terraform.tfvars
 
-# 2. 인프라 배포
+# 2. 인프라 배포 (약 5-10분)
 terraform init
 terraform plan
 terraform apply
+
+# 3. 출력 정보 확인
+terraform output
 ```
 
-### 2단계: Ansible로 서버 설정
+**terraform.tfvars 설정 예시:**
+```hcl
+aws_region                  = "ap-northeast-2"
+project_name               = "mechuragi"
+environment                = "dev"
+vpc_cidr                   = "10.0.0.0/16"
+key_pair_name              = "mechuragi-dev-key"
+main_service_instance_type = "t3.micro"
+ai_service_instance_type   = "t3.small"
+mysql_instance_type        = "t3.micro"
+redis_instance_type        = "t3.micro"
+mysql_volume_size          = 30
+ses_domain                 = "mechuragi.kro.kr"
+ses_from_email            = "noreply@mechuragi.kro.kr"
+bedrock_chat_model         = "anthropic.claude-3-sonnet-20240229-v1:0"
+bedrock_smart_model        = "anthropic.claude-3-sonnet-20240229-v1:0"
+bedrock_embedding_model    = "amazon.titan-embed-text-v1"
+```
+
+### ⚙️ 2단계: Ansible 서버 설정
 
 ```bash
 cd ansible
 
-# 1. 변수 파일 설정
-# group_vars/all.yml과 inventory/hosts.yml 설정
-# (자세한 방법은 ansible/README.md 참조)
+# 1. 인벤토리 파일 설정
+cp inventory/hosts.yml.template inventory/hosts.yml
+# Terraform 출력의 IP 주소들을 입력
 
-# 2. 순차적 설정 실행
+# 2. 변수 파일 설정
+vi group_vars/all/common.yml
+# 필요한 변수들 설정
+
+# 3. 순차적 설정 실행
 ansible-playbook -i inventory/hosts.yml playbooks/setup-system.yml
 ansible-playbook -i inventory/hosts.yml playbooks/setup-docker.yml
 ansible-playbook -i inventory/hosts.yml playbooks/setup-services.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup-applications.yml
 
-# 3. AWS 서비스 연동 설정 (선택사항)
-ansible-playbook -i inventory/hosts.yml playbooks/setup-aws-services.yml
-
-# 4. 전체 설정 검증
+# 4. 전체 검증
 ansible-playbook -i inventory/hosts.yml playbooks/verify-setup.yml
 ```
 
-## ⚙️ 설정 파일
+### 🎨 3단계: React 프론트엔드 배포
 
-### 🔧 Terraform 설정
-
-**terraform.tfvars** (생성 필요):
-```hcl
-aws_region    = "ap-northeast-2"
-project_name  = "mechuragi"
-environment   = "dev"
-vpc_cidr      = "10.0.0.0/16"
-instance_type = "t3.micro"
-key_pair_name = "your-actual-key-name"
-```
-
-### 🔧 Ansible 설정
-
-**group_vars/all.yml** (생성 필요):
-```yaml
-# 서버 연결 정보
-ansible_host: "YOUR_SERVER_IP"
-ansible_ssh_private_key_file: "~/.ssh/YOUR_KEY.pem"
-
-# 프로젝트 설정
-project_name: "mechuragi"
-environment: "dev"
-aws_region: "ap-northeast-2"
-
-# MySQL 설정
-mysql_root_password: "YOUR_MYSQL_PASSWORD"
-mysql_app_password: "YOUR_APP_PASSWORD"
-
-# AWS 서비스 설정 (선택사항)
-ses_from_email: "noreply@your-domain.com"
-s3_bucket_name: "mechuragi-dev-images"
-test_email: "test@example.com"
-
-# 기타 설정...
-```
-
-## 🔒 보안 설정
-
-### Git에서 제외되는 민감한 파일들:
-- `terraform/environments/dev/terraform.tfvars`
-- `terraform/environments/dev/*.tfstate*`
-- `ansible/group_vars/all.yml`
-- `ansible/inventory/hosts.yml`
-- `*.pem`, `*.key` (SSH 키)
-
-### 보안 모범 사례:
-- ✅ EBS 볼륨 암호화 활성화
-- ✅ SSH 키 기반 인증
-- ✅ 보안 그룹으로 포트 제한
-- ✅ MySQL/Redis VPC 내부 접근만 허용
-- ✅ 민감한 정보 Git 제외
-
-## 📊 출력 정보
-
-### Terraform 출력:
-- EC2 공인 IP 주소
-- SSH 접속 명령어
-- S3 버킷 이름
-- CloudFront 배포 URL
-- SES 도메인 설정 상태
-- Bedrock IAM 역할 ARN
-
-### Ansible 검증 결과:
-- 포트 리스닝 상태
-- 서비스 실행 상태
-- 시스템 리소스 사용량
-- Docker 컨테이너 목록
-- AWS 서비스 연결 테스트 결과
-
-## 📋 전제 조건
-
-- **AWS CLI** 설정 및 인증 완료
-- **Terraform** 1.0 이상
-- **Ansible** 2.9 이상
-- **AWS 키 페어** 생성 완료
-- **Python 3.8+** (대상 서버)
-- **boto3** 라이브러리 설치 (AWS 서비스 연동 시)
-
-## 🎯 주요 특징
-
-- **모듈화된 아키텍처**: 책임별로 분리된 Terraform 모듈과 Ansible 플레이북
-- **멱등성 보장**: 여러 번 실행해도 안전
-- **보안 중심**: 민감한 정보 분리 관리
-- **자동화된 검증**: 설치 후 상태 확인 자동화
-- **단계별 실행**: 필요한 부분만 선택적 실행 가능
-- **AWS 서비스 통합**: CloudFront, SES, Bedrock 등 주요 서비스 자동 설정
-- **AI 서비스 예제**: Bedrock을 활용한 추천 시스템 샘플 코드 제공
-
-## 🔧 문제 해결
-
-### 연결 테스트:
 ```bash
+# 1. React 앱 빌드
+npm run build
+
+# 2. S3에 업로드
+aws s3 sync ./build s3://mechuragi-dev-frontend --delete
+
+# 3. 이미지 파일 업로드
+aws s3 sync ./images s3://mechuragi-dev-images/images/
+
+# 4. CloudFront 접근
+# https://XXXXXX.cloudfront.net/
+```
+
+## 📊 배포 결과
+
+### 🖥️ 접속 정보
+```bash
+# 메인 서비스 (Elastic IP)
+ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@XXX.XXX.XXX.XXX
+
+# AI 서비스 (VPC 내부)
+ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@10.0.2.XXX
+
+# MySQL 서버 (VPC 내부)
+ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@10.0.2.XXX
+
+# Redis 서버 (VPC 내부)
+ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@10.0.2.XXX
+```
+
+### 🌐 서비스 URL
+- **React 앱**: `https://XXXXXX.cloudfront.net/`
+- **API 엔드포인트**: `https://XXXXXX.cloudfront.net/api/`
+- **이미지 CDN**: `https://XXXXXX.cloudfront.net/images/`
+- **메인 서비스 직접**: `http://XXX.XXX.XXX.XXX:8080`
+
+### 📈 성능 & 비용
+- **EC2 비용**: 월 $25 (3개 t3.micro + 1개 t3.small)
+- **네트워크 비용**: NAT Gateway 제거로 월 $45 절감
+- **스토리지**: S3 Standard + CloudFront PriceClass_100
+- **AI 서비스**: Bedrock 사용량 기반 과금
+
+## 🔧 운영 가이드
+
+### 📊 모니터링
+```bash
+# 전체 서비스 상태 확인
 ansible all -m ping -i inventory/hosts.yml
+
+# 서비스 상태 확인
+ansible all -m command -a "systemctl status docker mysql redis" -i inventory/hosts.yml
+
+# 리소스 사용량 확인
+ansible all -m command -a "htop -n 1" -i inventory/hosts.yml
 ```
 
-### 서비스 상태 확인:
+### 🔄 업데이트
 ```bash
-ansible all -m command -a "systemctl is-active docker redis" --become -i inventory/hosts.yml
+# 특정 모듈만 재배포
+terraform apply -target=module.cloudfront
+
+# 특정 서버만 재설정
+ansible-playbook -i inventory/hosts.yml playbooks/setup-services.yml --limit ai_service
+
+# 애플리케이션 배포 업데이트
+ansible-playbook -i inventory/hosts.yml playbooks/setup-applications.yml --tags deploy
 ```
 
-### Docker 컨테이너 확인:
+### 🚨 문제 해결
 ```bash
-ansible all -m command -a "docker ps" --become -i inventory/hosts.yml
+# 로그 확인
+ansible main_service -m command -a "docker logs mechuragi-main" -i inventory/hosts.yml
+
+# 네트워크 연결 테스트
+ansible all -m command -a "curl -s http://10.0.2.XXX:3306 || echo 'MySQL connection failed'" -i inventory/hosts.yml
+
+# CloudFront 캐시 무효화
+aws cloudfront create-invalidation --distribution-id XXXXXX --paths "/*"
 ```
 
-## 📚 추가 정보
+## 🛡️ 보안 특징
 
-- **Terraform 모듈**: 각 모듈의 `variables.tf` 파일에서 상세 설정 참조
-- **Ansible 플레이북**: `ansible/README.md`에서 단계별 실행 가이드 확인
-- **AWS 서비스 설정**: CloudFront, SES, Bedrock 모듈별 설정 방법
-- **보안 및 변수 관리**: `.gitignore` 파일과 변수 분리 규칙
-- **AI 서비스 예제**: `setup-aws-services.yml`로 생성되는 샘플 코드 활용
+### 🔒 네트워크 보안
+- **VPC 내부 통신**: DB/캐시는 10.0.0.0/16에서만 접근
+- **Elastic IP**: 메인 서비스 고정 IP
+- **HTTPS 강제**: CloudFront 자동 리디렉션
+
+### 🔐 데이터 보안
+- **EBS 암호화**: 모든 볼륨 AES-256 암호화
+- **S3 암호화**: 서버 측 암호화 + 버전 관리
+- **CloudFront OAC**: S3 직접 접근 차단
+
+### 🔑 접근 보안
+- **SSH 키 인증**: 모든 서버 키 페어 기반
+- **IAM 최소 권한**: 서비스별 필요 권한만
+- **민감 정보 분리**: Git에서 완전 제외
+
+## 📚 문서 링크
+
+- **[Terraform 상세 가이드](terraform/README.md)**: 인프라 모듈별 설정
+- **[Ansible 실행 가이드](ansible/README.md)**: 서버 설정 단계별 실행
+- **AWS 서비스 설정**: CloudFront, SES, Bedrock 연동 방법
+
+## 💡 주요 특징
+
+- ✅ **분산 마이크로서비스**: 4개 독립 서비스
+- ✅ **React + Spring Boot**: 현대적 풀스택 아키텍처
+- ✅ **비용 최적화**: 75% EC2 비용 절감
+- ✅ **보안 중심**: 4계층 네트워크 보안
+- ✅ **CDN 최적화**: 3-Origin CloudFront
+- ✅ **AI 통합**: AWS Bedrock 연동
+- ✅ **자동화**: IaC + Configuration Management
+- ✅ **확장 가능**: 모듈화된 아키텍처
 
 ---
 
-**⚠️ 주의사항**: 이 인프라는 개발 환경용으로 설계되었습니다. 프로덕션 환경에서는 추가적인 보안 강화가 필요합니다.
+**🎯 이 인프라는 메추라기 프로젝트의 완전한 분산 마이크로서비스 환경을 제공하며, 개발부터 운영까지 모든 단계를 지원합니다.**

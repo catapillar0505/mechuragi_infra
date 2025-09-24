@@ -62,11 +62,12 @@ resource "aws_instance" "ai_service" {
 
 # MySQL 데이터베이스용 EC2 인스턴스 (네이티브)
 resource "aws_instance" "mysql" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.mysql_instance_type
-  key_name               = var.key_pair_name
-  vpc_security_group_ids = [var.mysql_sg_id]
-  subnet_id              = var.public_subnet_id
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = var.mysql_instance_type
+  key_name                    = var.key_pair_name
+  vpc_security_group_ids      = [var.mysql_sg_id]
+  subnet_id                   = var.public_subnet_id
+  associate_public_ip_address = true
 
   root_block_device {
     volume_type = "gp3"
@@ -82,11 +83,12 @@ resource "aws_instance" "mysql" {
 
 # Redis 캐시 서버용 EC2 인스턴스 (네이티브)
 resource "aws_instance" "redis" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.redis_instance_type
-  key_name               = var.key_pair_name
-  vpc_security_group_ids = [var.redis_sg_id]
-  subnet_id              = var.public_subnet_id
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = var.redis_instance_type
+  key_name                    = var.key_pair_name
+  vpc_security_group_ids      = [var.redis_sg_id]
+  subnet_id                   = var.public_subnet_id
+  associate_public_ip_address = true
 
   root_block_device {
     volume_type = "gp3"

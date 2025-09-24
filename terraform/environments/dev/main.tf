@@ -81,11 +81,14 @@ module "s3" {
 module "cloudfront" {
   source = "../../modules/cloudfront"
 
-  project_name           = var.project_name
-  environment            = var.environment
-  s3_bucket_name         = module.s3.s3_bucket_name
-  s3_bucket_domain_name  = module.s3.s3_bucket_domain_name
-  s3_bucket_arn          = module.s3.s3_bucket_arn
+  project_name                      = var.project_name
+  environment                       = var.environment
+  s3_frontend_bucket_name           = module.s3.s3_frontend_bucket_name
+  s3_frontend_bucket_domain_name    = module.s3.s3_frontend_bucket_domain_name
+  s3_frontend_bucket_arn            = module.s3.s3_frontend_bucket_arn
+  s3_images_bucket_name             = module.s3.s3_images_bucket_name
+  s3_images_bucket_domain_name      = module.s3.s3_images_bucket_domain_name
+  s3_images_bucket_arn              = module.s3.s3_images_bucket_arn
 }
 
 # SES 모듈 호출
