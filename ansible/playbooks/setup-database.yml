@@ -3,7 +3,6 @@
   hosts: database
   become: yes
   roles:
-    - common
     - mysql
 
   post_tasks:
@@ -11,8 +10,5 @@
       mysql_db:
         login_user: "{{ mysql_app_user }}"
         login_password: "{{ mysql_app_password }}"
-        login_host: "{{ ansible_default_ipv4.address }}"
         name: "{{ mysql_database }}"
         state: present
-      delegate_to: localhost
-      run_once: true

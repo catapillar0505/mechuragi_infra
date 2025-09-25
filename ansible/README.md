@@ -243,6 +243,64 @@ role_name/
 3. group_vars/
 4. defaults/main.yml
 
+## 📊 로그 확인 방법
+
+### MySQL 로그 확인
+```bash
+# MySQL 통합 로그 확인 스크립트 실행
+ansible mysql-server -i inventory/hosts.yml -m shell -a "/usr/local/bin/mysql-logs.sh" --become
+
+# 또는 서버에 직접 접속해서 실행
+ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@<mysql-server-ip>
+sudo /usr/local/bin/mysql-logs.sh
+```
+
+### 개별 로그 파일 확인
+```bash
+# MySQL 에러 로그
+ansible mysql-server -i inventory/hosts.yml -m shell -a "tail -20 /var/log/mechuragi/mysql/error.log" --become
+
+# MySQL 슬로우 쿼리 로그
+ansible mysql-server -i inventory/hosts.yml -m shell -a "tail -10 /var/log/mechuragi/mysql/slow.log" --become
+
+# Redis 로그
+ansible redis-server -i inventory/hosts.yml -m shell -a "tail -20 /var/log/redis/redis-server.log" --become
+
+# 애플리케이션 로그 (Docker 컨테이너)
+ansible main-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-main-service --tail 20" --become
+ansible ai-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-ai-service --tail 20" --become
+```
+
+### 서비스 상태 확인
+```bash
+# 모든 서비스 상태 한번에 확인
+ansible all -i inventory/hosts.yml -m shell -a "systemctl status mysql redis-server nginx --no-pager || echo 'Some services not found on this server'" --become
+
+# 포트 리스닝 상태 확인
+ansible all -i inventory/hosts.yml -m shell -a "ss -tlnp | grep -E '3306|6379|8080|8081'" --become
+```
+
+### 연결성 테스트
+```bash
+# 전체 서비스 간 연결성 테스트
+ansible-playbook -i inventory/hosts.yml playbooks/test-connectivity.yml
+
+# MySQL 연결 테스트
+ansible mysql-server -i inventory/hosts.yml -m shell -a "mysql -e 'SELECT \"MySQL 연결 성공!\" as status;'" --become
+
+# Redis 연결 테스트
+ansible redis-server -i inventory/hosts.yml -m shell -a "redis-cli ping" --become
+```
+
+### 실시간 로그 모니터링
+```bash
+# MySQL 에러 로그 실시간 모니터링
+ansible mysql-server -i inventory/hosts.yml -m shell -a "tail -f /var/log/mechuragi/mysql/error.log" --become
+
+# Redis 로그 실시간 모니터링
+ansible redis-server -i inventory/hosts.yml -m shell -a "tail -f /var/log/redis/redis-server.log" --become
+```
+
 ## 🔍 트러블슈팅
 
 ### Role 의존성 문제
@@ -264,6 +322,18 @@ ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --check -v
 ```bash
 # 호스트 변수 출력
 ansible-inventory -i inventory/hosts.yml --host mysql-server --vars
+```
+
+### MySQL 연결 오류 해결
+```bash
+# MySQL 루트 패스워드 재설정이 필요한 경우
+ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --tags mysql
+
+# /root/.my.cnf 파일 확인
+ansible mysql-server -i inventory/hosts.yml -m shell -a "cat /root/.my.cnf" --become
+
+# MySQL 서비스 재시작
+ansible mysql-server -i inventory/hosts.yml -m systemd -a "name=mysql state=restarted" --become
 ```
 
 ## 🎯 성능 및 보안

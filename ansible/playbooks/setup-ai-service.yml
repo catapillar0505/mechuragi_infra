@@ -5,11 +5,26 @@
   vars:
     app_name: "ai-service"
     app_type: "ai"
-    app_port: "{{ ai_service_port }}"
+    app_port: 8081
     app_docker_compose_template: "docker-compose-ai.yml.j2"
     app_env_template: "ai-service.env.j2"
     app_logrotate_template: "ai-service-logrotate.j2"
-    app_health_check_url: "http://{{ ansible_default_ipv4.address }}:{{ ai_service_port }}/actuator/health"
+    app_health_check_url: "http://{{ ansible_default_ipv4.address }}:8081/actuator/health"
+    # 템플릿에서 사용할 변수들 명시적 정의
+    mysql_private_ip: "{{ hostvars['mysql-server']['private_ip'] }}"
+    redis_private_ip: "{{ hostvars['redis-server']['private_ip'] }}"
+    redis_port: 6379
+    mysql_database: "{{ mysql_database }}"
+    mysql_app_user: "{{ mysql_app_user }}"
+    mysql_app_password: "{{ mysql_app_password }}"
+    aws_region: "{{ aws_region }}"
+    bedrock_chat_model: "{{ bedrock_chat_model }}"
+    bedrock_smart_model: "{{ bedrock_smart_model }}"
+    bedrock_embedding_model: "{{ bedrock_embedding_model }}"
+    main_service_public_ip: "{{ hostvars['main-service-server']['ansible_host'] }}"
+    main_service_port: 8080
+    app_directory: "{{ app_directory }}"
+    config_directory: "{{ config_directory }}"
 
   roles:
     - common

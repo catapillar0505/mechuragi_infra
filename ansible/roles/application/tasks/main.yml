@@ -40,14 +40,14 @@
   when: app_docker_network is defined
 
 - name: 기존 컨테이너 중지 및 제거
-  docker_compose:
+  community.docker.docker_compose_v2:
     project_src: "{{ app_directory }}"
     state: absent
   ignore_errors: yes
   when: app_force_recreate | default(false)
 
 - name: Docker Compose로 애플리케이션 시작
-  docker_compose:
+  community.docker.docker_compose_v2:
     project_src: "{{ app_directory }}"
     state: present
     pull: yes

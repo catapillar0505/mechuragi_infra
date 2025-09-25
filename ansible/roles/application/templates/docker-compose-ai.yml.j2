@@ -5,10 +5,10 @@ services:
     image: openjdk:17-jdk-slim
     container_name: mechuragi-ai-service
     ports:
-      - "{{ ai_service_port }}:{{ ai_service_port }}"
+      - "{{ app_port }}:{{ app_port }}"
     environment:
       - SPRING_PROFILES_ACTIVE=production
-      - SERVER_PORT={{ ai_service_port }}
+      - SERVER_PORT={{ app_port }}
       - DB_HOST={{ mysql_private_ip }}
       - DB_PORT=3306
       - DB_NAME={{ mysql_database }}
@@ -29,7 +29,7 @@ services:
     command: ["java", "-jar", "ai-service.jar"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:{{ ai_service_port }}/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:{{ app_port }}/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3

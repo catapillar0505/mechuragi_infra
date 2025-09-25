@@ -43,6 +43,15 @@ resource "aws_security_group" "main_service" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # ICMP (ping) - VPC 내부 통신 확인용
+  ingress {
+    description = "ICMP from VPC for connectivity testing"
+    from_port   = -1
+    to_port     = -1
+    protocol    = "icmp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
   # 모든 아웃바운드 트래픽 허용 (인터넷 접근, API 호출 등)
   egress {
     description = "All outbound traffic"
@@ -68,13 +77,13 @@ resource "aws_security_group" "ai_service" {
   vpc_id      = var.vpc_id
   description = "VPC-internal AI service security group (access restricted to VPC only)"
 
-  # SSH 포트 - 서버 관리용 (VPC 내부에서만 접근)
+  # SSH 포트 - 서버 관리용 (Public subnet 구조로 인터넷 접근 허용)
   ingress {
-    description = "SSH from VPC only"
+    description = "SSH for server management"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]  # 10.0.0.0/16 내부에서만
+    cidr_blocks = ["0.0.0.0/0"]  # Public subnet이므로 인터넷 접근 허용
   }
 
   # Spring Boot AI 애플리케이션 포트 (VPC 내부에서만 접근)
@@ -84,6 +93,15 @@ resource "aws_security_group" "ai_service" {
     to_port     = 8081
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]  # 메인 서비스에서만 호출 가능
+  }
+
+  # ICMP (ping) - VPC 내부 통신 확인용
+  ingress {
+    description = "ICMP from VPC for connectivity testing"
+    from_port   = -1
+    to_port     = -1
+    protocol    = "icmp"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   # 모든 아웃바운드 트래픽 허용 (Bedrock API 호출, 패키지 설치 등)
@@ -111,13 +129,13 @@ resource "aws_security_group" "mysql" {
   vpc_id      = var.vpc_id
   description = "VPC-internal MySQL database security group (port 3306 restricted to VPC only)"
 
-  # SSH 포트 - 서버 관리용 (VPC 내부에서만 접근)
+  # SSH 포트 - 서버 관리용 (Public subnet 구조로 인터넷 접근 허용)
   ingress {
-    description = "SSH from VPC only"
+    description = "SSH for server management"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]  # 10.0.0.0/16 내부에서만
+    cidr_blocks = ["0.0.0.0/0"]  # Public subnet이므로 인터넷 접근 허용
   }
 
   # MySQL 데이터베이스 포트 (VPC 내부에서만 접근)
@@ -127,6 +145,15 @@ resource "aws_security_group" "mysql" {
     to_port     = 3306
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]  # 메인/AI 서비스에서만 연결 가능
+  }
+
+  # ICMP (ping) - VPC 내부 통신 확인용
+  ingress {
+    description = "ICMP from VPC for connectivity testing"
+    from_port   = -1
+    to_port     = -1
+    protocol    = "icmp"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   # 모든 아웃바운드 트래픽 허용 (패키지 업데이트, 백업 등)
@@ -154,13 +181,13 @@ resource "aws_security_group" "redis" {
   vpc_id      = var.vpc_id
   description = "VPC-internal Redis cache security group (port 6379 restricted to VPC only)"
 
-  # SSH 포트 - 서버 관리용 (VPC 내부에서만 접근)
+  # SSH 포트 - 서버 관리용 (Public subnet 구조로 인터넷 접근 허용)
   ingress {
-    description = "SSH from VPC only"
+    description = "SSH for server management"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]  # 10.0.0.0/16 내부에서만
+    cidr_blocks = ["0.0.0.0/0"]  # Public subnet이므로 인터넷 접근 허용
   }
 
   # Redis 캐시 서버 포트 (VPC 내부에서만 접근)
@@ -170,6 +197,15 @@ resource "aws_security_group" "redis" {
     to_port     = 6379
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]  # 메인/AI 서비스에서만 연결 가능
+  }
+
+  # ICMP (ping) - VPC 내부 통신 확인용
+  ingress {
+    description = "ICMP from VPC for connectivity testing"
+    from_port   = -1
+    to_port     = -1
+    protocol    = "icmp"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   # 모든 아웃바운드 트래픽 허용 (패키지 업데이트, 모니터링 등)

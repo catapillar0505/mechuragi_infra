@@ -13,3 +13,9 @@ ansible/group_vars/
 ansible/group_vars_backup/
 ansible/inventory/
 ansible/host_vars/
+
+# 로그 파일들
+logs/*.log
+logs/*/*.log
+logs/last_collected.txt
+logs/collect.log

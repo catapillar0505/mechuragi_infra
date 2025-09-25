@@ -31,20 +31,6 @@
     group: redis
     mode: '0755'
 
-- name: Redis systemd 오버라이드 설정
-  template:
-    src: redis-override.conf.j2
-    dest: /etc/systemd/system/redis-server.service.d/override.conf
-    mode: '0644'
-  notify:
-    - systemd 다시로드
-    - Redis 재시작
-
-- name: systemd 서비스 디렉토리 생성
-  file:
-    path: /etc/systemd/system/redis-server.service.d
-    state: directory
-    mode: '0755'
 
 - name: Redis 서비스 시작 및 활성화
   systemd:

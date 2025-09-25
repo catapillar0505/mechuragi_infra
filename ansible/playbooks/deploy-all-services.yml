@@ -2,37 +2,23 @@
 - name: 메추라기 전체 서비스 배포
   hosts: localhost
   gather_facts: no
-  vars_prompt:
-    - name: "main_service_public_ip"
-      prompt: "메인 서비스 공인 IP"
-      private: no
-    - name: "ai_service_private_ip"
-      prompt: "AI 서비스 사설 IP"
-      private: no
-    - name: "mysql_private_ip"
-      prompt: "MySQL 사설 IP"
-      private: no
-    - name: "redis_private_ip"
-      prompt: "Redis 사설 IP"
-      private: no
-
   tasks:
+    - name: IP 주소 자동 설정
+      set_fact:
+        main_service_public_ip: "{{ hostvars[groups['main_service'][0]]['ansible_host'] }}"
+        ai_service_private_ip: "{{ hostvars[groups['ai_service'][0]]['private_ip'] }}"
+        mysql_private_ip: "{{ hostvars[groups['database'][0]]['private_ip'] }}"
+        redis_private_ip: "{{ hostvars[groups['cache'][0]]['private_ip'] }}"
+
     - name: 배포 계획 표시
       debug:
         msg: |
           🚀 메추라기 분산 서비스 배포 시작
           =====================================
-          메인 서비스: {{ main_service_public_ip }}
-          AI 서비스: {{ ai_service_private_ip }}
-          MySQL: {{ mysql_private_ip }}
-          Redis: {{ redis_private_ip }}
-
-    - name: 동적 IP 주소 설정
-      set_fact:
-        main_service_public_ip: "{{ main_service_public_ip }}"
-        ai_service_private_ip: "{{ ai_service_private_ip }}"
-        mysql_private_ip: "{{ mysql_private_ip }}"
-        redis_private_ip: "{{ redis_private_ip }}"
+          메인 서비스 (공인 IP): {{ main_service_public_ip }}
+          AI 서비스 (사설 IP): {{ ai_service_private_ip }}
+          MySQL (사설 IP): {{ mysql_private_ip }}
+          Redis (사설 IP): {{ redis_private_ip }}
 
 # 1단계: 데이터베이스 레이어 구축
 - import_playbook: setup-database.yml
@@ -68,6 +54,7 @@
         port: "{{ redis_port }}"
         timeout: 60
       when: inventory_hostname in groups['cache']
+      become: no
 
     - name: AI 서비스 확인
       uri:

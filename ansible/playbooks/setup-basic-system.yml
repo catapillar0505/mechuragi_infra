@@ -1,0 +1,11 @@
+---
+- name: 기본 시스템 설정
+  hosts: all
+  become: yes
+  roles:
+    - common
+
+  tasks:
+    - name: 시스템 설정 완료 확인
+      debug:
+        msg: "✅ {{ inventory_hostname }} 기본 시스템 설정 완료"
