@@ -5,8 +5,8 @@
     compress
     delaycompress
     notifempty
-    create 0644 ubuntu ubuntu
+    create 0644 {{ app_user }} {{ app_group }}
     postrotate
-        docker kill -s USR1 mechuragi-ai-service 2>/dev/null || true
+        docker kill -s USR1 {{ project_name }}-ai-service 2>/dev/null || true
     endscript
 }

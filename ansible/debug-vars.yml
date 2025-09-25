@@ -1,0 +1,9 @@
+---
+- name: 변수 테스트
+  hosts: ai_service
+  vars_files:
+    - group_vars/all.yml
+  tasks:
+    - name: ai_service_port 변수 확인
+      debug:
+        var: ai_service_port

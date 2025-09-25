@@ -3,12 +3,12 @@ version: '3.8'
 services:
   ai-service:
     image: openjdk:17-jdk-slim
-    container_name: mechuragi-ai-service
+    container_name: {{ project_name }}-ai-service
     ports:
-      - "{{ app_port }}:{{ app_port }}"
+      - "{{ ai_service_port }}:{{ ai_service_port }}"
     environment:
-      - SPRING_PROFILES_ACTIVE=production
-      - SERVER_PORT={{ app_port }}
+      - SPRING_PROFILES_ACTIVE={{ spring_profiles_active }}
+      - SERVER_PORT={{ ai_service_port }}
       - DB_HOST={{ mysql_private_ip }}
       - DB_PORT=3306
       - DB_NAME={{ mysql_database }}
@@ -26,22 +26,22 @@ services:
       - {{ config_directory }}:/config:ro
       - /var/log/ai-service:/var/log/ai-service
     working_dir: /app
-    command: ["java", "-jar", "ai-service.jar"]
+    command: ["java", {{ java_opts }}, "-jar", "ai-service.jar"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:{{ app_port }}/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:{{ ai_service_port }}{{ health_check_endpoint }}"]
       interval: 30s
-      timeout: 10s
+      timeout: {{ health_check_timeout }}s
       retries: 3
       start_period: 90s
     networks:
-      - mechuragi-ai-network
+      - {{ project_name }}-ai-network
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
+        max-size: "{{ log_max_file_size }}"
         max-file: "3"
 
 networks:
-  mechuragi-ai-network:
+  {{ project_name }}-ai-network:
     driver: bridge

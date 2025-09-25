@@ -2,6 +2,8 @@
 - name: 메추라기 전체 서비스 배포
   hosts: localhost
   gather_facts: no
+  vars_files:
+    - group_vars/all.yml
   tasks:
     - name: IP 주소 자동 설정
       set_fact:

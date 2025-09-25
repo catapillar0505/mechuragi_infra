@@ -2,10 +2,11 @@
 - name: 메인 서비스 구축
   hosts: main_service
   become: yes
+  vars_files:
+    - group_vars/all.yml
   vars:
     app_name: "main-service"
     app_type: "main"
-    app_port: "{{ main_service_port }}"
     app_docker_compose_template: "docker-compose-main.yml.j2"
     app_env_template: "main-service.env.j2"
     app_health_check_url: "http://{{ ansible_default_ipv4.address }}:{{ main_service_port }}/actuator/health"

@@ -2,6 +2,8 @@
 - name: 메추라기 서비스 간 연결성 테스트
   hosts: localhost
   gather_facts: no
+  vars_files:
+    - group_vars/all.yml
   tasks:
     - name: 테스트 시작 메시지
       debug:

@@ -2,6 +2,8 @@
 - name: 캐시 서버 구축
   hosts: cache
   become: yes
+  vars_files:
+    - group_vars/all.yml
   roles:
     - common
     - redis
