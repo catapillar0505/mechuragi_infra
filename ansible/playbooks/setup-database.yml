@@ -3,7 +3,7 @@
   hosts: database
   become: yes
   vars_files:
-    - group_vars/all.yml
+    - ../group_vars/all/main.yml
   roles:
     - mysql
 

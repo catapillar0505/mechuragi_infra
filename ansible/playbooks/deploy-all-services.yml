@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: no
   vars_files:
-    - group_vars/all.yml
+    - ../group_vars/all/main.yml
   tasks:
     - name: IP 주소 자동 설정
       set_fact:

@@ -9,18 +9,18 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE={{ spring_profiles_active }}
       - SERVER_PORT={{ ai_service_port }}
-      - DB_HOST={{ mysql_private_ip }}
+      - DB_HOST={{ hostvars['mysql-server']['private_ip'] if hostvars['mysql-server'] is defined else '10.0.1.214' }}
       - DB_PORT=3306
       - DB_NAME={{ mysql_database }}
       - DB_USERNAME={{ mysql_app_user }}
       - DB_PASSWORD={{ mysql_app_password }}
-      - REDIS_HOST={{ redis_private_ip }}
+      - REDIS_HOST={{ hostvars['redis-server']['private_ip'] if hostvars['redis-server'] is defined else '10.0.1.185' }}
       - REDIS_PORT={{ redis_port }}
       - AWS_REGION={{ aws_region }}
       - BEDROCK_CHAT_MODEL={{ bedrock_chat_model }}
       - BEDROCK_SMART_MODEL={{ bedrock_smart_model }}
       - BEDROCK_EMBEDDING_MODEL={{ bedrock_embedding_model }}
-      - MAIN_SERVICE_URL=http://{{ main_service_public_ip }}:{{ main_service_port }}
+      - MAIN_SERVICE_URL=http://{{ hostvars['main-service-server']['ansible_host'] if hostvars['main-service-server'] is defined else '15.165.136.100' }}:{{ main_service_port }}
     volumes:
       - {{ app_directory }}/ai-service.jar:/app/ai-service.jar:ro
       - {{ config_directory }}:/config:ro

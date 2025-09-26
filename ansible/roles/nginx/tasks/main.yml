@@ -10,6 +10,14 @@
     state: started
     enabled: yes
 
+- name: Nginx 로그 디렉토리 생성
+  file:
+    path: "{{ log_directory }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
 - name: Nginx 설정 파일 생성
   template:
     src: "{{ nginx_site_template }}"
