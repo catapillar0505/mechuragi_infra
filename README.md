@@ -4,18 +4,24 @@
 
 ## 🏗️ 아키텍처 개요
 
-### 분산 서비스 구조 (4개 인스턴스 + React CDN)
+### 분산 서비스 구조 (4개 인스턴스 + React CDN + CI/CD)
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   React 앱      │    │  메인 서비스      │    │  AI 추천 서비스   │
 │  (S3+CloudFront)│ ←→ │ (Spring Boot)   │ ←→ │ (Spring Boot)   │
-│                 │    │   + SES         │    │   + Bedrock     │
+│                 │    │ :8080 + SES     │    │ :8082 + Bedrock │
+│                 │    │ Blue-Green 배포  │    │ Docker 배포     │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          ↕                      ↕                      ↕
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   이미지 CDN    │    │   MySQL DB      │    │   Redis Cache   │
 │   (CloudFront)   │    │   (Database)    │    │   (Cache)       │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
+                              ↕                      ↕
+                    ┌─────────────────┐    ┌─────────────────┐
+                    │ GitHub Actions  │    │ Discord 알림     │
+                    │ CI/CD Pipeline  │    │ 배포 상태 모니터링│
+                    └─────────────────┘    └─────────────────┘
 ```
 
 ### 네트워크 보안 설계
@@ -85,8 +91,8 @@ mechuragi-infra/
 - **🔥 75% 비용 절감**: 3개 서비스를 t3.micro로 최적화
 
 #### 🛡️ 보안 (Security 모듈)
-- **Main Service SG**: HTTP(80), HTTPS(443), SSH(22), Spring(8080)
-- **AI Service SG**: Spring(8081), SSH(22) - VPC 내부만
+- **Main Service SG**: HTTP(80), HTTPS(443), SSH(22), Spring(8080), Blue-Green(8081)
+- **AI Service SG**: Spring(8082), SSH(22) - VPC 내부만
 - **MySQL SG**: MySQL(3306), SSH(22) - VPC 내부만
 - **Redis SG**: Redis(6379), SSH(22) - VPC 내부만
 
@@ -120,8 +126,10 @@ mechuragi-infra/
 
 #### 🐳 컨테이너 환경
 - **Docker & Docker Compose**: 컨테이너 오케스트레이션
+- **Blue-Green 배포**: 무중단 서비스 업데이트
 - **MySQL 8.0**: Docker 컨테이너로 실행
 - **Redis 6**: 시스템 서비스로 경량 실행
+- **Multi-platform 빌드**: ARM64/AMD64 지원
 
 #### ⚙️ 시스템 도구
 - **개발 도구**: git, curl, wget, vim, htop
@@ -129,6 +137,39 @@ mechuragi-infra/
 - **네트워크**: UFW 방화벽 (기본 비활성화)
 
 ## 🚀 배포 가이드
+
+### 🔄 CI/CD 파이프라인 (추천)
+
+#### GitHub Actions 자동 배포
+```bash
+# 1. GitHub Secrets 설정
+DOCKERHUB_USERNAME     # Docker Hub 사용자명
+DOCKERHUB_TOKEN        # Docker Hub 토큰
+EC2_SSH_KEY            # EC2 SSH 개인키
+MAIN_SERVER_HOST       # 메인 서버 IP
+AI_SERVER_HOST         # AI 서버 IP
+DB_HOST                # MySQL 서버 IP
+DB_PASSWORD            # MySQL 비밀번호
+REDIS_HOST             # Redis 서버 IP
+MAIN_SERVICE_URL       # 메인 서비스 URL
+DISCORD_WEBHOOK        # Discord 알림 웹훅
+
+# 2. 자동 배포 실행
+git push origin main    # main 브랜치 푸시로 자동 배포
+```
+
+#### Blue-Green 배포 프로세스
+1. **빌드 단계**: Spring Boot 애플리케이션 빌드
+2. **테스트 단계**: 자동화된 테스트 실행
+3. **이미지 빌드**: Docker 멀티플랫폼 이미지 생성
+4. **배포 단계**:
+   - 새 컨테이너(Green) 시작
+   - 헬스체크 수행
+   - Nginx 트래픽 전환
+   - 이전 컨테이너(Blue) 제거
+5. **알림**: Discord로 배포 결과 전송
+
+### 📋 수동 배포 (개발/테스트용)
 
 ### 📝 사전 준비
 
@@ -250,6 +291,10 @@ ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@10.0.2.XXX
 - **API 엔드포인트**: `https://XXXXXX.cloudfront.net/api/`
 - **이미지 CDN**: `https://XXXXXX.cloudfront.net/images/`
 - **메인 서비스 직접**: `http://XXX.XXX.XXX.XXX:8080`
+- **AI 서비스 직접**: `http://10.0.2.XXX:8082` (VPC 내부만)
+- **헬스체크**:
+  - 메인: `http://XXX.XXX.XXX.XXX:8080/actuator/health`
+  - AI: `http://10.0.2.XXX:8082/actuator/health`
 
 ### 📈 성능 & 비용
 - **EC2 비용**: 월 $25 (3개 t3.micro + 1개 t3.small)
@@ -267,12 +312,31 @@ ansible all -m ping -i inventory/hosts.yml
 # 서비스 상태 확인
 ansible all -m command -a "systemctl status docker mysql redis" -i inventory/hosts.yml
 
+# Docker 컨테이너 상태 확인
+ansible main_service -m command -a "docker ps" -i inventory/hosts.yml
+ansible ai_service -m command -a "docker ps" -i inventory/hosts.yml
+
+# Blue-Green 배포 상태 확인
+ansible main_service -m command -a "curl -s http://localhost:8080/actuator/health" -i inventory/hosts.yml
+ansible main_service -m command -a "curl -s http://localhost:8081/actuator/health" -i inventory/hosts.yml
+
 # 리소스 사용량 확인
 ansible all -m command -a "htop -n 1" -i inventory/hosts.yml
+
+# Discord 알림 확인
+# GitHub Actions 로그에서 배포 상태 모니터링
 ```
 
 ### 🔄 업데이트
 ```bash
+# CI/CD 파이프라인을 통한 업데이트 (추천)
+git push origin main  # 자동 배포 트리거
+
+# 수동 Blue-Green 배포
+ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@XXX.XXX.XXX.XXX
+cd /home/ubuntu/app
+./scripts/blue-green-deploy.sh
+
 # 특정 모듈만 재배포
 terraform apply -target=module.cloudfront
 
@@ -281,18 +345,43 @@ ansible-playbook -i inventory/hosts.yml playbooks/setup-services.yml --limit ai_
 
 # 애플리케이션 배포 업데이트
 ansible-playbook -i inventory/hosts.yml playbooks/setup-applications.yml --tags deploy
+
+# 배포 롤백 (Blue-Green)
+ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@XXX.XXX.XXX.XXX
+cd /home/ubuntu/app
+./scripts/blue-green-deploy.sh rollback
 ```
 
 ### 🚨 문제 해결
 ```bash
-# 로그 확인
-ansible main_service -m command -a "docker logs mechuragi-main" -i inventory/hosts.yml
+# Blue-Green 배포 로그 확인
+ansible main_service -m command -a "docker logs mechuragi-main-blue" -i inventory/hosts.yml
+ansible main_service -m command -a "docker logs mechuragi-main-green" -i inventory/hosts.yml
+ansible ai_service -m command -a "docker logs mechuragi-ai-service" -i inventory/hosts.yml
 
 # 네트워크 연결 테스트
-ansible all -m command -a "curl -s http://10.0.2.XXX:3306 || echo 'MySQL connection failed'" -i inventory/hosts.yml
+ansible-playbook -i inventory/hosts.yml playbooks/test-connectivity.yml
+
+# 서비스 헬스체크
+curl -f http://XXX.XXX.XXX.XXX:8080/actuator/health
+curl -f http://10.0.2.XXX:8082/actuator/health
+
+# Nginx 설정 확인
+ansible main_service -m command -a "nginx -t" -i inventory/hosts.yml
+ansible main_service -m command -a "systemctl status nginx" -i inventory/hosts.yml
+
+# GitHub Actions 로그 확인
+# https://github.com/USERNAME/REPO/actions
+
+# Discord 알림 테스트
+# GitHub Actions에서 수동 트리거로 알림 테스트
 
 # CloudFront 캐시 무효화
 aws cloudfront create-invalidation --distribution-id XXXXXX --paths "/*"
+
+# Docker 네트워크 문제 해결
+ansible all -m command -a "docker network ls" -i inventory/hosts.yml
+ansible all -m command -a "docker network create app_mechuragi-network" -i inventory/hosts.yml
 ```
 
 ## 🛡️ 보안 특징
@@ -322,12 +411,35 @@ aws cloudfront create-invalidation --distribution-id XXXXXX --paths "/*"
 
 - ✅ **분산 마이크로서비스**: 4개 독립 서비스
 - ✅ **React + Spring Boot**: 현대적 풀스택 아키텍처
+- ✅ **Blue-Green 배포**: 무중단 서비스 업데이트
+- ✅ **CI/CD 파이프라인**: GitHub Actions 자동 배포
+- ✅ **Docker 컨테이너화**: 멀티플랫폼 지원
+- ✅ **실시간 알림**: Discord 배포 상태 모니터링
 - ✅ **비용 최적화**: 75% EC2 비용 절감
 - ✅ **보안 중심**: 4계층 네트워크 보안
 - ✅ **CDN 최적화**: 3-Origin CloudFront
 - ✅ **AI 통합**: AWS Bedrock 연동
 - ✅ **자동화**: IaC + Configuration Management
 - ✅ **확장 가능**: 모듈화된 아키텍처
+
+---
+
+## 🆕 최신 업데이트 (v2.0)
+
+### ✨ 새로운 기능
+- **🔄 Blue-Green 배포**: 메인 서비스 무중단 업데이트
+- **🤖 GitHub Actions CI/CD**: 자동 빌드, 테스트, 배포
+- **🐳 Docker 컨테이너화**: 멀티플랫폼 이미지 빌드 (ARM64/AMD64)
+- **💬 Discord 알림**: 실시간 배포 상태 모니터링
+- **🎯 AI 서비스 분리**: 독립적인 추천 서비스 (Port 8082)
+- **🔀 포트 최적화**: 서비스 간 포트 충돌 해결
+
+### 🔧 주요 개선사항
+- **메인 서비스**: Blue-Green 배포로 무중단 서비스
+- **AI 서비스**: 8081 → 8082 포트 변경으로 충돌 해결
+- **Nginx 설정**: Blue-Green 전환을 위한 동적 업스트림 구성
+- **Docker 네트워크**: `app_mechuragi-network`로 서비스 간 통신
+- **멀티플랫폼 빌드**: GitHub Actions에서 ARM64/AMD64 동시 지원
 
 ---
 

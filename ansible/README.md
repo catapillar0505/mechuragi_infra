@@ -2,7 +2,14 @@
 
 ## 📋 개요
 
-메추라기 분산 인프라를 위한 Ansible Roles 기반 구조입니다. 각 서비스별로 재사용 가능한 roles로 분리하고, 단순한 변수 관리를 통해 책임을 명확히 하고 유지보수성을 향상시켰습니다.
+메추라기 분산 인프라를 위한 Ansible Roles 기반 구조입니다. **Blue-Green 배포**, **CI/CD 파이프라인**, **Docker 컨테이너화**를 지원하며, 각 서비스별로 재사용 가능한 roles로 분리하고, 변수 관리를 통해 책임을 명확히 하고 유지보수성을 향상시켰습니다.
+
+## 🆕 v2.0 업데이트 특징
+- **🔄 Blue-Green 무중단 배포**: 메인 서비스 8080/8081 포트 전환
+- **🤖 GitHub Actions 연동**: 자동 빌드, 테스트, 배포 파이프라인
+- **🐳 멀티플랫폼 Docker**: ARM64/AMD64 지원
+- **💬 Discord 실시간 알림**: 배포 상태 모니터링
+- **🎯 AI 서비스 분리**: 포트 8082로 독립 운영
 
 ## 📁 디렉토리 구조
 
@@ -83,23 +90,27 @@ ansible/
   - 시스템 튜닝
 - **의존성**: common
 
-### 5. **nginx** - Nginx 리버스 프록시
-- **목적**: Nginx 설치 및 리버스 프록시 설정
+### 5. **nginx** - Nginx 리버스 프록시 & Blue-Green 로드밸런서
+- **목적**: Nginx 설치 및 Blue-Green 배포를 위한 로드밸런싱
 - **포함 기능**:
   - Nginx 설치
+  - **Blue-Green 업스트림 설정**: 동적 포트 전환 (8080 ↔ 8081)
   - 사이트 설정 파일 생성
   - SSL 지원 (옵션)
   - 보안 헤더 설정
+  - 헬스체크 기반 자동 전환
 - **의존성**: common
 
 ### 6. **application** - Spring Boot 애플리케이션
 - **목적**: Docker 기반 Spring Boot 애플리케이션 배포
 - **포함 기능**:
+  - **Blue-Green 배포**: 메인 서비스 무중단 업데이트
+  - **CI/CD 연동**: GitHub Actions 자동 배포
   - Docker Compose 파일 생성
   - 환경변수 설정
   - 로그 로테이션 설정
-  - 헬스체크
-- **의존성**: common, docker
+  - 헬스체크 및 자동 전환
+- **의존성**: common, docker, nginx
 
 ## 🚀 플레이북 실행 순서
 
@@ -267,7 +278,9 @@ ansible mysql-server -i inventory/hosts.yml -m shell -a "tail -10 /var/log/mechu
 ansible redis-server -i inventory/hosts.yml -m shell -a "tail -20 /var/log/redis/redis-server.log" --become
 
 # 애플리케이션 로그 (Docker 컨테이너)
-ansible main-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-main-service --tail 20" --become
+# Blue-Green 배포 컨테이너 로그
+ansible main-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-main-blue --tail 20" --become
+ansible main-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-main-green --tail 20" --become
 ansible ai-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-ai-service --tail 20" --become
 ```
 
@@ -277,7 +290,10 @@ ansible ai-service-server -i inventory/hosts.yml -m shell -a "docker logs mechur
 ansible all -i inventory/hosts.yml -m shell -a "systemctl status mysql redis-server nginx --no-pager || echo 'Some services not found on this server'" --become
 
 # 포트 리스닝 상태 확인
-ansible all -i inventory/hosts.yml -m shell -a "ss -tlnp | grep -E '3306|6379|8080|8081'" --become
+ansible all -i inventory/hosts.yml -m shell -a "ss -tlnp | grep -E '3306|6379|8080|8081|8082'" --become
+
+# Blue-Green 배포 상태 확인
+ansible main-service-server -i inventory/hosts.yml -m shell -a "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" --become
 ```
 
 ### 연결성 테스트
@@ -299,6 +315,25 @@ ansible mysql-server -i inventory/hosts.yml -m shell -a "tail -f /var/log/mechur
 
 # Redis 로그 실시간 모니터링
 ansible redis-server -i inventory/hosts.yml -m shell -a "tail -f /var/log/redis/redis-server.log" --become
+```
+
+### Blue-Green 배포 특별 명령어
+```bash
+# Blue-Green 배포 상태 확인
+ansible main-service-server -i inventory/hosts.yml -m shell -a "curl -s http://localhost:8080/actuator/health" --become
+ansible main-service-server -i inventory/hosts.yml -m shell -a "curl -s http://localhost:8081/actuator/health" --become
+
+# 현재 활성 서비스 확인 (Nginx 업스트림)
+ansible main-service-server -i inventory/hosts.yml -m shell -a "grep 'server 127.0.0.1:' /etc/nginx/sites-available/main-service" --become
+
+# Blue-Green 배포 스크립트 실행
+ansible main-service-server -i inventory/hosts.yml -m shell -a "cd /home/ubuntu/app && ./scripts/blue-green-deploy.sh" --become
+
+# GitHub Actions 배포 로그 모니터링
+# https://github.com/USERNAME/REPO/actions
+
+# Discord 알림 확인
+# GitHub Actions에서 자동 전송
 ```
 
 ## 🔍 트러블슈팅
@@ -336,6 +371,27 @@ ansible mysql-server -i inventory/hosts.yml -m shell -a "cat /root/.my.cnf" --be
 ansible mysql-server -i inventory/hosts.yml -m systemd -a "name=mysql state=restarted" --become
 ```
 
+### Blue-Green 배포 문제 해결
+```bash
+# Docker 네트워크 문제
+ansible main-service-server -i inventory/hosts.yml -m shell -a "docker network create app_mechuragi-network" --become
+
+# Blue-Green 컨테이너 상태 확인
+ansible main-service-server -i inventory/hosts.yml -m shell -a "docker ps -a --filter name=mechuragi-main" --become
+
+# Nginx 업스트림 설정 확인
+ansible main-service-server -i inventory/hosts.yml -m shell -a "nginx -t && systemctl reload nginx" --become
+
+# 헬스체크 실패 시 수동 전환
+ansible main-service-server -i inventory/hosts.yml -m shell -a "cd /home/ubuntu/app && ./scripts/blue-green-deploy.sh rollback" --become
+
+# GitHub Actions 재실행
+# GitHub 웹사이트에서 Re-run jobs 클릭
+
+# Discord 웹훅 테스트
+ansible main-service-server -i inventory/hosts.yml -m shell -a "curl -X POST YOUR_DISCORD_WEBHOOK_URL -H 'Content-Type: application/json' -d '{\"content\":\"Ansible 테스트 메시지\"}'" --become
+```
+
 ## 🎯 성능 및 보안
 
 ### Role별 최적화
@@ -367,12 +423,18 @@ ansible mysql-server -i inventory/hosts.yml -m systemd -a "name=mysql state=rest
 ## 🏗️ 인프라 구조
 
 ### 4개 서버 분산 구조
-- **메인 서비스 서버** (Public): Spring Boot + AWS SES + S3
+- **메인 서비스 서버** (Public): Spring Boot + Blue-Green 배포 + AWS SES + S3
+  - 포트: 8080 (Blue), 8081 (Green), 80/443 (Nginx)
 - **AI 서비스 서버** (Private): Spring Boot + AWS Bedrock
+  - 포트: 8082
 - **MySQL 서버** (Private): 네이티브 MySQL 설치
+  - 포트: 3306
 - **Redis 서버** (Private): 네이티브 Redis 설치
+  - 포트: 6379
 
 ### 네트워크 구성
 - 메인 서비스만 Public IP 보유
 - 나머지 서버들은 SSH 점프 박스를 통해 접근
 - 내부 통신은 Private IP 사용
+- **Docker 네트워크**: `app_mechuragi-network`로 컨테이너 간 통신
+- **Blue-Green 전환**: Nginx가 8080 ↔ 8081 동적 라우팅
