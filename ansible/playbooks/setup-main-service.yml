@@ -11,7 +11,7 @@
     app_env_template: "main-service.env.j2"
     app_health_check_url: "http://{{ ansible_default_ipv4.address }}:{{ main_service_port }}/actuator/health"
     nginx_site_name: "main-service"
-    nginx_site_template: "blue-green-main.conf.j2"
+    nginx_site_template: "nginx-main-service.conf.j2"
     blue_green_deploy_script: "blue-green-deploy.sh.j2"
 
   roles:
