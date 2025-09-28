@@ -31,8 +31,8 @@
       when: inventory_hostname in groups['cache']
       ignore_errors: yes
 
-    - name: AI 서비스 리스닝 포트 확인 (8081)
-      shell: ss -tlnp | grep 8081 | head -1
+    - name: AI 서비스 리스닝 포트 확인 ({{ ai_service_port }})
+      shell: ss -tlnp | grep {{ ai_service_port }} | head -1
       register: ai_port
       when: inventory_hostname in groups['ai_service']
       ignore_errors: yes
@@ -65,12 +65,12 @@
 
     - name: AI 서비스 포트 결과 출력
       debug:
-        msg: "✅ AI 서비스 (8081): 리스닝 중"
+        msg: "✅ AI 서비스 ({{ ai_service_port }}): 리스닝 중"
       when: inventory_hostname in groups['ai_service'] and ai_port is defined and ai_port.rc == 0
 
     - name: AI 서비스 포트 실패 출력
       debug:
-        msg: "❌ AI 서비스 (8081): 리스닝하지 않음"
+        msg: "❌ AI 서비스 ({{ ai_service_port }}): 리스닝하지 않음"
       when: inventory_hostname in groups['ai_service'] and (ai_port is not defined or ai_port.rc != 0)
 
     - name: 메인 서비스 포트 결과 출력
@@ -113,7 +113,7 @@
       ignore_errors: yes
 
     - name: 메인 서비스 → AI 서비스 포트 연결 테스트
-      shell: timeout 5 nc -zv {{ hostvars[groups['ai_service'][0]]['private_ip'] }} 8081
+      shell: timeout 5 nc -zv {{ hostvars[groups['ai_service'][0]]['private_ip'] }} {{ ai_service_port }}
       register: ai_port_test
       ignore_errors: yes
 
@@ -151,9 +151,9 @@
           ❌ Redis:6379 - 연결 실패
           {% endif %}
           {% if ai_port_test.rc == 0 %}
-          ✅ AI 서비스:8081 - 연결 성공
+          ✅ AI 서비스:{{ ai_service_port }} - 연결 성공
           {% else %}
-          ❌ AI 서비스:8081 - 연결 실패
+          ❌ AI 서비스:{{ ai_service_port }} - 연결 실패
           {% endif %}
 
 - name: AI 서비스 연결성 테스트

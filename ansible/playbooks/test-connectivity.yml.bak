@@ -1,0 +1,206 @@
+---
+- name: 메추라기 서비스 간 연결성 테스트
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - ../group_vars/all/main.yml
+  tasks:
+    - name: 테스트 시작 메시지
+      debug:
+        msg: |
+          🔍 메추라기 분산 서비스 연결성 테스트 시작
+          ==========================================
+          테스트 항목:
+          - 서비스 리스닝 포트 확인
+          - 서비스 간 Ping 연결성
+          - 서비스 간 포트 연결성
+
+- name: 서비스 리스닝 포트 확인
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: MySQL 리스닝 포트 확인 (3306)
+      shell: ss -tlnp | grep 3306 | head -1
+      register: mysql_port
+      when: inventory_hostname in groups['database']
+      ignore_errors: yes
+
+    - name: Redis 리스닝 포트 확인 (6379)
+      shell: ss -tlnp | grep 6379 | head -1
+      register: redis_port
+      when: inventory_hostname in groups['cache']
+      ignore_errors: yes
+
+    - name: AI 서비스 리스닝 포트 확인 ({{ ai_service_port }})
+      shell: ss -tlnp | grep {{ ai_service_port }} | head -1
+      register: ai_port
+      when: inventory_hostname in groups['ai_service']
+      ignore_errors: yes
+
+    - name: 메인 서비스 리스닝 포트 확인 (8080)
+      shell: ss -tlnp | grep 8080 | head -1
+      register: main_port
+      when: inventory_hostname in groups['main_service']
+      ignore_errors: yes
+
+    - name: MySQL 포트 결과 출력
+      debug:
+        msg: "✅ MySQL (3306): 리스닝 중"
+      when: inventory_hostname in groups['database'] and mysql_port is defined and mysql_port.rc == 0
+
+    - name: MySQL 포트 실패 출력
+      debug:
+        msg: "❌ MySQL (3306): 리스닝하지 않음"
+      when: inventory_hostname in groups['database'] and (mysql_port is not defined or mysql_port.rc != 0)
+
+    - name: Redis 포트 결과 출력
+      debug:
+        msg: "✅ Redis (6379): 리스닝 중"
+      when: inventory_hostname in groups['cache'] and redis_port is defined and redis_port.rc == 0
+
+    - name: Redis 포트 실패 출력
+      debug:
+        msg: "❌ Redis (6379): 리스닝하지 않음"
+      when: inventory_hostname in groups['cache'] and (redis_port is not defined or redis_port.rc != 0)
+
+    - name: AI 서비스 포트 결과 출력
+      debug:
+        msg: "✅ AI 서비스 (8081): 리스닝 중"
+      when: inventory_hostname in groups['ai_service'] and ai_port is defined and ai_port.rc == 0
+
+    - name: AI 서비스 포트 실패 출력
+      debug:
+        msg: "❌ AI 서비스 (8081): 리스닝하지 않음"
+      when: inventory_hostname in groups['ai_service'] and (ai_port is not defined or ai_port.rc != 0)
+
+    - name: 메인 서비스 포트 결과 출력
+      debug:
+        msg: "✅ 메인 서비스 (8080): 리스닝 중"
+      when: inventory_hostname in groups['main_service'] and main_port is defined and main_port.rc == 0
+
+    - name: 메인 서비스 포트 실패 출력
+      debug:
+        msg: "❌ 메인 서비스 (8080): 리스닝하지 않음"
+      when: inventory_hostname in groups['main_service'] and (main_port is not defined or main_port.rc != 0)
+
+- name: 서비스 간 연결성 테스트
+  hosts: main_service
+  gather_facts: no
+  tasks:
+    - name: 메인 서비스 → MySQL Ping 테스트
+      shell: ping -c 2 {{ hostvars[groups['database'][0]]['private_ip'] }}
+      register: mysql_ping
+      ignore_errors: yes
+
+    - name: 메인 서비스 → Redis Ping 테스트
+      shell: ping -c 2 {{ hostvars[groups['cache'][0]]['private_ip'] }}
+      register: redis_ping
+      ignore_errors: yes
+
+    - name: 메인 서비스 → AI 서비스 Ping 테스트
+      shell: ping -c 2 {{ hostvars[groups['ai_service'][0]]['private_ip'] }}
+      register: ai_ping
+      ignore_errors: yes
+
+    - name: 메인 서비스 → MySQL 포트 연결 테스트
+      shell: timeout 5 nc -zv {{ hostvars[groups['database'][0]]['private_ip'] }} 3306
+      register: mysql_port_test
+      ignore_errors: yes
+
+    - name: 메인 서비스 → Redis 포트 연결 테스트
+      shell: timeout 5 nc -zv {{ hostvars[groups['cache'][0]]['private_ip'] }} 6379
+      register: redis_port_test
+      ignore_errors: yes
+
+    - name: 메인 서비스 → AI 서비스 포트 연결 테스트
+      shell: timeout 5 nc -zv {{ hostvars[groups['ai_service'][0]]['private_ip'] }} 8081
+      register: ai_port_test
+      ignore_errors: yes
+
+    - name: 메인 서비스 연결성 결과 출력
+      debug:
+        msg: |
+          🌐 메인 서비스 → 다른 서비스 연결성 테스트 결과:
+
+          📍 Ping 연결성:
+          {% if mysql_ping.rc == 0 %}
+          ✅ MySQL: 연결 성공 ({{ hostvars[groups['database'][0]]['private_ip'] }})
+          {% else %}
+          ❌ MySQL: 연결 실패 ({{ hostvars[groups['database'][0]]['private_ip'] }})
+          {% endif %}
+          {% if redis_ping.rc == 0 %}
+          ✅ Redis: 연결 성공 ({{ hostvars[groups['cache'][0]]['private_ip'] }})
+          {% else %}
+          ❌ Redis: 연결 실패 ({{ hostvars[groups['cache'][0]]['private_ip'] }})
+          {% endif %}
+          {% if ai_ping.rc == 0 %}
+          ✅ AI 서비스: 연결 성공 ({{ hostvars[groups['ai_service'][0]]['private_ip'] }})
+          {% else %}
+          ❌ AI 서비스: 연결 실패 ({{ hostvars[groups['ai_service'][0]]['private_ip'] }})
+          {% endif %}
+
+          🔌 포트 연결성:
+          {% if mysql_port_test.rc == 0 %}
+          ✅ MySQL:3306 - 연결 성공
+          {% else %}
+          ❌ MySQL:3306 - 연결 실패
+          {% endif %}
+          {% if redis_port_test.rc == 0 %}
+          ✅ Redis:6379 - 연결 성공
+          {% else %}
+          ❌ Redis:6379 - 연결 실패
+          {% endif %}
+          {% if ai_port_test.rc == 0 %}
+          ✅ AI 서비스:8081 - 연결 성공
+          {% else %}
+          ❌ AI 서비스:8081 - 연결 실패
+          {% endif %}
+
+- name: AI 서비스 연결성 테스트
+  hosts: ai_service
+  gather_facts: no
+  tasks:
+    - name: AI 서비스 → MySQL 포트 연결 테스트
+      shell: timeout 5 nc -zv {{ hostvars[groups['database'][0]]['private_ip'] }} 3306
+      register: ai_mysql_test
+      ignore_errors: yes
+
+    - name: AI 서비스 → Redis 포트 연결 테스트
+      shell: timeout 5 nc -zv {{ hostvars[groups['cache'][0]]['private_ip'] }} 6379
+      register: ai_redis_test
+      ignore_errors: yes
+
+    - name: AI 서비스 연결성 결과 출력
+      debug:
+        msg: |
+          🤖 AI 서비스 → 다른 서비스 연결성 테스트 결과:
+
+          🔌 포트 연결성:
+          {% if ai_mysql_test.rc == 0 %}
+          ✅ MySQL:3306 - 연결 성공
+          {% else %}
+          ❌ MySQL:3306 - 연결 실패
+          {% endif %}
+          {% if ai_redis_test.rc == 0 %}
+          ✅ Redis:6379 - 연결 성공
+          {% else %}
+          ❌ Redis:6379 - 연결 실패
+          {% endif %}
+
+- name: 테스트 완료 요약
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: 테스트 완료 메시지
+      debug:
+        msg: |
+          ✅ 메추라기 서비스 간 연결성 테스트 완료!
+          ==========================================
+
+          📋 테스트 완료 항목:
+          - 각 서비스 포트 리스닝 상태 확인
+          - 메인 서비스 ↔ 모든 서비스 연결성 확인
+          - AI 서비스 ↔ 데이터 서비스 연결성 확인
+
+          🔍 상세한 결과는 위의 출력을 참고하세요.
+          ❌ 연결 실패가 있다면 host_readme.md의 트러블슈팅 가이드를 확인하세요.
