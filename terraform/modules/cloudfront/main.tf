@@ -51,6 +51,9 @@ resource "aws_cloudfront_distribution" "main_distribution" {
   comment             = "${var.project_name} React 프론트엔드 + 이미지 CDN"
   price_class         = "PriceClass_100"  # 아시아/북미/유럽 지역만
 
+  # ACM 인증서가 검증된 경우에만 커스텀 도메인 사용
+  aliases = var.use_custom_domain && var.acm_certificate_arn != null ? [var.domain_name] : []
+
   # React SPA 기본 캐시 동작 (모든 정적 파일에 적용)
   default_cache_behavior {
     allowed_methods        = ["GET", "HEAD"]
@@ -134,7 +137,11 @@ resource "aws_cloudfront_distribution" "main_distribution" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = true
+    # ACM 인증서가 검증되고 커스텀 도메인 사용이 활성화된 경우에만 ACM 사용
+    cloudfront_default_certificate = var.use_custom_domain && var.acm_certificate_arn != null ? false : true
+    acm_certificate_arn            = var.use_custom_domain && var.acm_certificate_arn != null ? var.acm_certificate_arn : null
+    ssl_support_method             = var.use_custom_domain && var.acm_certificate_arn != null ? "sni-only" : null
+    minimum_protocol_version       = var.use_custom_domain && var.acm_certificate_arn != null ? "TLSv1.2_2021" : null
   }
 
   tags = {

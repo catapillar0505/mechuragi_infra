@@ -64,3 +64,22 @@ variable "web_domain" {
   type        = string
   default     = "mechuragi.kro.kr"
 }
+
+# 커스텀 도메인 및 인증서 관련 변수
+variable "domain_name" {
+  description = "Custom domain name for CloudFront (e.g., mechuragi.kro.kr)"
+  type        = string
+  default     = null
+}
+
+variable "acm_certificate_arn" {
+  description = "ARN of the ACM certificate for custom domain (must be in us-east-1)"
+  type        = string
+  default     = null
+}
+
+variable "use_custom_domain" {
+  description = "Enable custom domain for CloudFront (only after ACM certificate is validated)"
+  type        = bool
+  default     = false
+}
