@@ -67,6 +67,7 @@ module "compute" {
   redis_sg_id                    = module.security.redis_sg_id
   public_subnet_id               = module.vpc.public_subnet_id
   bedrock_instance_profile_name  = module.bedrock.bedrock_instance_profile_name
+  ses_instance_profile_name      = module.ses.ses_instance_profile_name
 }
 
 # S3 모듈 호출

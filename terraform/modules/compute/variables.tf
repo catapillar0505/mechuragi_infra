@@ -67,6 +67,11 @@ variable "bedrock_instance_profile_name" {
   type        = string
 }
 
+variable "ses_instance_profile_name" {
+  description = "Name of the SES IAM instance profile for main service"
+  type        = string
+}
+
 variable "mysql_volume_size" {
   description = "Size of the MySQL EBS volume in GB"
   type        = number

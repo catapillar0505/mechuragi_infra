@@ -32,9 +32,10 @@ resource "aws_network_interface" "main_service_eni" {
 
 # 메인 서비스용 EC2 인스턴스 (Docker)
 resource "aws_instance" "main_service" {
-  ami           = data.aws_ami.ubuntu.id
-  instance_type = var.main_service_instance_type
-  key_name      = var.key_pair_name
+  ami                  = data.aws_ami.ubuntu.id
+  instance_type        = var.main_service_instance_type
+  key_name             = var.key_pair_name
+  iam_instance_profile = var.ses_instance_profile_name  # SES 권한 필요
 
   network_interface {
     network_interface_id = aws_network_interface.main_service_eni.id
