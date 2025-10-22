@@ -10,7 +10,21 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
-  
+
+  default_tags {
+    tags = {
+      Project     = "mechuragi"
+      Environment = "dev"
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
+# CloudFront용 ACM 인증서는 us-east-1 리전에 생성 필요
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
   default_tags {
     tags = {
       Project     = "mechuragi"
@@ -73,9 +87,24 @@ module "compute" {
 # S3 모듈 호출
 module "s3" {
   source = "../../modules/s3"
-  
+
   project_name = var.project_name
   environment  = var.environment
+}
+
+# ACM 인증서 모듈 호출 (CloudFront용)
+module "acm_certificate" {
+  source = "../../modules/acm-certificate"
+
+  providers = {
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  project_name              = var.project_name
+  environment               = var.environment
+  domain_name               = var.domain_name
+  subject_alternative_names = var.subject_alternative_names
+  wait_for_validation       = var.wait_for_acm_validation
 }
 
 # CloudFront 모듈 호출
@@ -90,6 +119,9 @@ module "cloudfront" {
   s3_images_bucket_name             = module.s3.s3_images_bucket_name
   s3_images_bucket_domain_name      = module.s3.s3_images_bucket_domain_name
   s3_images_bucket_arn              = module.s3.s3_images_bucket_arn
+  domain_name                       = var.domain_name
+  acm_certificate_arn               = module.acm_certificate.certificate_arn
+  use_custom_domain                 = var.use_custom_domain
 }
 
 # SES 모듈 호출

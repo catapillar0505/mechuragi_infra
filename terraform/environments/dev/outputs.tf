@@ -99,3 +99,19 @@ output "bedrock_log_group" {
   description = "Bedrock CloudWatch log group"
   value       = module.bedrock.cloudwatch_log_group_name
 }
+
+# ACM Certificate outputs
+output "acm_certificate_arn" {
+  description = "ACM certificate ARN for CloudFront"
+  value       = module.acm_certificate.certificate_arn
+}
+
+output "acm_certificate_status" {
+  description = "ACM certificate status"
+  value       = module.acm_certificate.certificate_status
+}
+
+output "acm_domain_validation_options" {
+  description = "kro.kr DNS 관리 페이지에 추가해야 할 CNAME 레코드"
+  value       = module.acm_certificate.domain_validation_options
+}

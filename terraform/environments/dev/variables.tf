@@ -59,3 +59,28 @@ variable "bedrock_embedding_model" {
   type        = string
   default     = "amazon.titan-embed-text-v1"
 }
+
+# Custom Domain and ACM Certificate Variables
+variable "domain_name" {
+  description = "Custom domain name (e.g., mechuragi.kro.kr)"
+  type        = string
+  default     = "mechuragi.kro.kr"
+}
+
+variable "subject_alternative_names" {
+  description = "Additional domain names for SSL certificate"
+  type        = list(string)
+  default     = []
+}
+
+variable "use_custom_domain" {
+  description = "Enable custom domain for CloudFront (only after ACM certificate is validated)"
+  type        = bool
+  default     = false
+}
+
+variable "wait_for_acm_validation" {
+  description = "Wait for ACM certificate validation (only after DNS CNAME records are added to kro.kr)"
+  type        = bool
+  default     = false
+}
