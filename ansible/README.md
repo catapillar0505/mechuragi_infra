@@ -350,34 +350,6 @@ ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml -vvv #
 #### group_vars/all/main.yml
 전역 공통 변수를 정의합니다.
 
-**주요 변수:**
-```yaml
-project_name: mechuragi
-environment: dev
-redis_port: 6379
-mysql_database: mechuragi
-mysql_app_user: mechuragi_user
-```
-
-#### group_vars/database/mysql.yml
-MySQL 관련 변수를 정의합니다.
-
-**주요 변수:**
-```yaml
-mysql_root_password: your_password
-mysql_app_password: your_password
-mysql_maxmemory: 1gb
-```
-
-#### group_vars/cache/redis.yml
-Redis 관련 변수를 정의합니다.
-
-**주요 변수:**
-```yaml
-redis_maxmemory: 1gb
-redis_maxmemory_policy: allkeys-lru
-```
-
 ### inventory/hosts.yml
 서버 그룹 및 접속 정보를 정의합니다.
 
