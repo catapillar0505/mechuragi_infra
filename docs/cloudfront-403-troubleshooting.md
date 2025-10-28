@@ -90,7 +90,7 @@ restrictions {
 ```nginx
 server {
     listen 80;
-    server_name {{ ansible_host }} _;  # 와일드카드로 모든 호스트 허용
+    server_name _;  # 와일드카드로 모든 호스트 허용
 
     # CloudFront 헤더 전달
     location /api/ {
