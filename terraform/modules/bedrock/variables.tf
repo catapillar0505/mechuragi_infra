@@ -9,15 +9,15 @@ variable "environment" {
 }
 
 variable "chat_model_id" {
-  description = "Bedrock model ID for chat (fast model)"
+  description = "Bedrock model ID for chat (Claude 3 Haiku - fast and cost-effective)"
   type        = string
-  default     = "anthropic.claude-instant-v1"
+  default     = "anthropic.claude-3-haiku-20240307-v1:0"
 }
 
 variable "smart_model_id" {
-  description = "Bedrock model ID for smart responses (high-quality model)"
+  description = "Bedrock model ID for smart responses (Claude 3 Haiku)"
   type        = string
-  default     = "anthropic.claude-instant-v1"
+  default     = "anthropic.claude-3-haiku-20240307-v1:0"
 }
 
 variable "embedding_model_id" {

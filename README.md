@@ -6,22 +6,40 @@
 
 ### 분산 서비스 구조 (4개 인스턴스 + React CDN + CI/CD)
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   React 앱      │    │  메인 서비스      │    │  AI 추천 서비스   │
-│  (S3+CloudFront)│ ←→ │ (Spring Boot)   │ ←→ │ (Spring Boot)   │
-│                 │    │ :8080 + SES     │    │ :8082 + Bedrock │
-│                 │    │ Blue-Green 배포  │    │ Docker 배포     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         ↕                      ↕                      ↕
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   이미지 CDN    │    │   MySQL DB      │    │   Redis Cache   │
-│   (CloudFront)   │    │   (Database)    │    │   (Cache)       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              ↕                      ↕
-                    ┌─────────────────┐    ┌─────────────────┐
-                    │ GitHub Actions  │    │ Discord 알림     │
-                    │ CI/CD Pipeline  │    │ 배포 상태 모니터링│
-                    └─────────────────┘    └─────────────────┘
+                    ┌──────────────────────────────┐
+                    │  사용자 (Browser/Mobile)      │
+                    └──────────────┬───────────────┘
+                                   │ HTTPS
+                    ┌──────────────▼───────────────┐
+                    │   CloudFront (CDN)           │
+                    │   - CNAME: mechuragi.kro.kr  │
+                    │   - SSL: ACM Certificate     │
+                    └──┬─────────┬─────────┬───────┘
+                       │         │         │
+            ┌──────────▼──┐  ┌──▼─────┐  ┌▼───────────┐
+            │  S3 (React) │  │S3 (Img)│  │EC2 (Nginx) │
+            │  정적 파일   │  │이미지   │  │  :80       │
+            └─────────────┘  └────────┘  └─┬──────────┘
+                                            │ reverse proxy
+                    ┌───────────────────────▼─────────┐
+                    │  메인 서비스 (Spring Boot)      │
+                    │  :8080 + SES                    │
+                    │  Blue-Green 배포                │
+                    └──────────────┬──────────────────┘
+                                   │ VPC 내부 통신
+                    ┌──────────────▼──────────────────┐
+                    │  AI 추천 서비스 (Spring Boot)   │
+                    │  :8082 + Bedrock                │
+                    │  Docker 배포                    │
+                    └──────────────┬──────────────────┘
+                                   │
+            ┌──────────────────────┼──────────────────────┐
+            │                      │                      │
+    ┌───────▼──────┐      ┌───────▼──────┐      ┌───────▼──────┐
+    │  MySQL DB    │      │ Redis Cache  │      │ GitHub CI/CD │
+    │  :3306       │      │ :6379        │      │ + Discord    │
+    │  VPC 내부만  │      │ VPC 내부만   │      │ 알림         │
+    └──────────────┘      └──────────────┘      └──────────────┘
 ```
 
 ### 네트워크 보안 설계
@@ -66,11 +84,14 @@ mechuragi-infra/
     │   ├── nginx/                      # 웹 서버 (역방향 프록시)
     │   └── application/                # Spring Boot 애플리케이션
     └── playbooks/                      # 🎮 실행 플레이북
-        ├── setup-system.yml           # 시스템 기본 설정
-        ├── setup-docker.yml           # Docker 환경
-        ├── setup-services.yml         # MySQL + Redis
-        ├── setup-applications.yml     # Spring Boot 앱들
-        └── verify-setup.yml           # 전체 검증
+        ├── deploy-all-services.yml    # 전체 인프라 배포 (MySQL, Redis, Nginx)
+        ├── setup-basic-system.yml     # 기본 시스템 설정
+        ├── setup-database.yml         # MySQL 설치 및 검증
+        ├── setup-cache.yml            # Redis 설치 및 검증
+        ├── setup-docker-only.yml      # Docker만 설치
+        ├── test-connectivity.yml      # VPC 연결성 테스트
+        ├── test-front.yml             # 프론트엔드 테스트
+        └── backup/                    # 백업 플레이북
 ```
 
 ## 🏛️ 인프라 구성
@@ -91,10 +112,19 @@ mechuragi-infra/
 - **🔥 75% 비용 절감**: 3개 서비스를 t3.micro로 최적화
 
 #### 🛡️ 보안 (Security 모듈)
-- **Main Service SG**: HTTP(80), HTTPS(443), SSH(22), Spring(8080), Blue-Green(8081)
-- **AI Service SG**: Spring(8082), SSH(22) - VPC 내부만
-- **MySQL SG**: MySQL(3306), SSH(22) - VPC 내부만
-- **Redis SG**: Redis(6379), SSH(22) - VPC 내부만
+- **Main Service SG**:
+  - HTTP(80), HTTPS(443): 전체 인터넷 허용 (CloudFront 포함)
+  - SSH(22): 관리용
+  - Spring(8080): 내부 통신
+- **AI Service SG**:
+  - Spring(8082): VPC 내부만 (10.0.0.0/16)
+  - SSH(22): 관리용
+- **MySQL SG**:
+  - MySQL(3306): VPC 내부만 (10.0.%에서만 접근)
+  - SSH(22): 관리용
+- **Redis SG**:
+  - Redis(6379): VPC 내부만 (10.0.0.0/16)
+  - SSH(22): 관리용
 
 #### 🗄️ 스토리지 (S3 모듈)
 - **Frontend Bucket**: `mechuragi-dev-frontend` (React SPA)
@@ -104,11 +134,16 @@ mechuragi-infra/
 
 #### 🌍 CDN (CloudFront 모듈)
 - **3-Origin 구조**:
-  - Frontend Origin: React 정적 파일 (S3)
-  - Images Origin: 이미지 파일 (S3)
-  - API Origin: Spring Boot API (EC2:8080)
+  - Frontend Origin: React 정적 파일 (S3 + OAC)
+  - Images Origin: 이미지 파일 (S3 + OAC)
+  - API Origin: Spring Boot API (EC2:80 Nginx → 8080)
+- **커스텀 도메인**: `mechuragi.kro.kr` (ACM SSL 인증서)
 - **캐시 정책**: 용도별 차별화된 TTL 설정
-- **SPA 지원**: 404 → index.html 리디렉션
+  - React 파일: 1일 (최대 1년)
+  - 이미지: 1주일 (최대 1년)
+  - API: 캐싱 비활성화 (실시간 데이터)
+- **SPA 지원**: 404/403 → index.html 리디렉션
+- **보안**: HTTPS 강제, S3 직접 접근 차단 (OAC)
 
 #### 📧 이메일 (SES 모듈)
 - **도메인 검증**: mechuragi.kro.kr
@@ -117,8 +152,10 @@ mechuragi-infra/
 - **모니터링**: Configuration Set
 
 #### 🧠 AI 서비스 (Bedrock 모듈)
-- **Claude 3 Sonnet**: 대화형 AI
-- **Titan Text Embeddings**: 벡터 임베딩
+- **Claude 3 Haiku**: 빠르고 비용 효율적인 대화형 AI
+  - Chat Model: `anthropic.claude-3-haiku-20240307-v1:0`
+  - Smart Model: `anthropic.claude-3-haiku-20240307-v1:0`
+- **Titan Text Embeddings**: 벡터 임베딩 (`amazon.titan-embed-text-v1`)
 - **IAM 권한**: Bedrock 전체 접근
 - **로깅**: CloudWatch (14일 보존)
 
@@ -127,9 +164,18 @@ mechuragi-infra/
 #### 🐳 컨테이너 환경
 - **Docker & Docker Compose**: 컨테이너 오케스트레이션
 - **Blue-Green 배포**: 무중단 서비스 업데이트
-- **MySQL 8.0**: Docker 컨테이너로 실행
-- **Redis 6**: 시스템 서비스로 경량 실행
+- **MySQL 8.0**: 네이티브 설치 (VPC 내부 bind-address: 0.0.0.0)
+- **Redis 6**: 네이티브 설치 (VPC 내부 통신)
+- **Nginx**: Reverse Proxy (CloudFront → API 라우팅)
 - **Multi-platform 빌드**: ARM64/AMD64 지원
+
+#### 🌐 Nginx 설정 (역방향 프록시)
+- **포트 80**: CloudFront에서 들어오는 요청 처리
+- **라우팅**:
+  - `/api/*` → Spring Boot (8080)
+  - `/actuator/*` → Spring Boot 헬스체크 (VPC 내부만)
+  - `/` → 404 (프론트엔드는 CloudFront/S3에서 제공)
+- **Blue-Green 지원**: 동적 업스트림 전환 (8080 ↔ 8081)
 
 #### ⚙️ 시스템 도구
 - **개발 도구**: git, curl, wget, vim, htop
@@ -213,21 +259,35 @@ terraform output
 
 **terraform.tfvars 설정 예시:**
 ```hcl
-aws_region                  = "ap-northeast-2"
-project_name               = "mechuragi"
-environment                = "dev"
-vpc_cidr                   = "10.0.0.0/16"
+# AWS 설정
+aws_region   = "ap-northeast-2"
+project_name = "mechuragi"
+environment  = "dev"
+
+# 네트워크
+vpc_cidr = "10.0.0.0/16"
+
+# EC2 인스턴스
 key_pair_name              = "mechuragi-dev-key"
 main_service_instance_type = "t3.micro"
 ai_service_instance_type   = "t3.small"
 mysql_instance_type        = "t3.micro"
 redis_instance_type        = "t3.micro"
 mysql_volume_size          = 30
-ses_domain                 = "mechuragi.kro.kr"
-ses_from_email            = "noreply@mechuragi.kro.kr"
-bedrock_chat_model         = "anthropic.claude-3-sonnet-20240229-v1:0"
-bedrock_smart_model        = "anthropic.claude-3-sonnet-20240229-v1:0"
-bedrock_embedding_model    = "amazon.titan-embed-text-v1"
+
+# SES 이메일
+ses_domain     = "mechuragi.kro.kr"
+ses_from_email = "noreply@mechuragi.kro.kr"
+
+# Bedrock AI (Claude 3 Haiku - 빠르고 비용 효율적)
+bedrock_chat_model      = "anthropic.claude-3-haiku-20240307-v1:0"
+bedrock_smart_model     = "anthropic.claude-3-haiku-20240307-v1:0"
+bedrock_embedding_model = "amazon.titan-embed-text-v1"
+
+# CloudFront 커스텀 도메인 (ACM 인증서 발급 후 활성화)
+domain_name             = "mechuragi.kro.kr"
+use_custom_domain       = true   # ACM 검증 완료 후 true로 설정
+wait_for_acm_validation = true
 ```
 
 ### ⚙️ 2단계: Ansible 서버 설정
@@ -243,14 +303,16 @@ cp inventory/hosts.yml.template inventory/hosts.yml
 vi group_vars/all/common.yml
 # 필요한 변수들 설정
 
-# 3. 순차적 설정 실행
-ansible-playbook -i inventory/hosts.yml playbooks/setup-system.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup-docker.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup-services.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup-applications.yml
+# 3. 전체 인프라 배포 (권장)
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml
 
-# 4. 전체 검증
-ansible-playbook -i inventory/hosts.yml playbooks/verify-setup.yml
+# 또는 개별 설정 실행
+ansible-playbook -i inventory/hosts.yml playbooks/setup-basic-system.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml
+
+# 4. 연결성 테스트
+ansible-playbook -i inventory/hosts.yml playbooks/test-connectivity.yml
 ```
 
 ### 🎨 3단계: React 프론트엔드 배포
@@ -287,14 +349,16 @@ ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@10.0.2.XXX
 ```
 
 ### 🌐 서비스 URL
-- **React 앱**: `https://XXXXXX.cloudfront.net/`
-- **API 엔드포인트**: `https://XXXXXX.cloudfront.net/api/`
-- **이미지 CDN**: `https://XXXXXX.cloudfront.net/images/`
-- **메인 서비스 직접**: `http://XXX.XXX.XXX.XXX:8080`
+- **React 앱**: `https://mechuragi.kro.kr/` (CloudFront 커스텀 도메인)
+- **API 엔드포인트**: `https://mechuragi.kro.kr/api/`
+- **이미지 CDN**: `https://mechuragi.kro.kr/images/`
+- **CloudFront 기본 도메인**: `https://XXXXXX.cloudfront.net/`
+- **메인 서비스 직접 (Nginx)**: `http://XXX.XXX.XXX.XXX/api/`
 - **AI 서비스 직접**: `http://10.0.2.XXX:8082` (VPC 내부만)
 - **헬스체크**:
-  - 메인: `http://XXX.XXX.XXX.XXX:8080/actuator/health`
-  - AI: `http://10.0.2.XXX:8082/actuator/health`
+  - 메인 (외부): `http://XXX.XXX.XXX.XXX/actuator/health`
+  - 메인 (내부): `http://localhost:8080/actuator/health`
+  - AI (VPC): `http://10.0.2.XXX:8082/actuator/health`
 
 ### 📈 성능 & 비용
 - **EC2 비용**: 월 $25 (3개 t3.micro + 1개 t3.small)
@@ -370,6 +434,10 @@ curl -f http://10.0.2.XXX:8082/actuator/health
 ansible main_service -m command -a "nginx -t" -i inventory/hosts.yml
 ansible main_service -m command -a "systemctl status nginx" -i inventory/hosts.yml
 
+# Nginx 로그 확인
+ansible main_service -m command -a "tail -n 50 /var/log/nginx/main_service_error.log" -i inventory/hosts.yml
+ansible main_service -m command -a "tail -n 50 /var/log/nginx/main_service_access.log" -i inventory/hosts.yml
+
 # GitHub Actions 로그 확인
 # https://github.com/USERNAME/REPO/actions
 
@@ -377,7 +445,13 @@ ansible main_service -m command -a "systemctl status nginx" -i inventory/hosts.y
 # GitHub Actions에서 수동 트리거로 알림 테스트
 
 # CloudFront 캐시 무효화
-aws cloudfront create-invalidation --distribution-id XXXXXX --paths "/*"
+aws cloudfront create-invalidation --distribution-id E2055JLBFIVGCA --paths "/*"
+
+# CloudFront 배포 상태 확인
+aws cloudfront get-distribution --id E2055JLBFIVGCA --query 'Distribution.Status'
+
+# CloudFront 커스텀 도메인 설정 확인
+aws cloudfront get-distribution --id E2055JLBFIVGCA --query 'Distribution.DistributionConfig.Aliases'
 
 # Docker 네트워크 문제 해결
 ansible all -m command -a "docker network ls" -i inventory/hosts.yml
@@ -388,58 +462,86 @@ ansible all -m command -a "docker network create app_mechuragi-network" -i inven
 
 ### 🔒 네트워크 보안
 - **VPC 내부 통신**: DB/캐시는 10.0.0.0/16에서만 접근
+- **MySQL 접근 제어**: VPC 내부 10.0.% 호스트만 허용
+- **Redis bind 설정**: 0.0.0.0으로 VPC 내부 통신, 보안 그룹으로 제어
+- **Nginx Reverse Proxy**: CloudFront → Nginx(80) → Spring Boot(8080)
 - **Elastic IP**: 메인 서비스 고정 IP
-- **HTTPS 강제**: CloudFront 자동 리디렉션
+- **HTTPS 강제**: CloudFront 자동 리디렉션 + ACM SSL 인증서
 
 ### 🔐 데이터 보안
 - **EBS 암호화**: 모든 볼륨 AES-256 암호화
 - **S3 암호화**: 서버 측 암호화 + 버전 관리
 - **CloudFront OAC**: S3 직접 접근 차단
+- **TLS 1.2**: CloudFront 최소 프로토콜 버전
 
 ### 🔑 접근 보안
 - **SSH 키 인증**: 모든 서버 키 페어 기반
 - **IAM 최소 권한**: 서비스별 필요 권한만
-- **민감 정보 분리**: Git에서 완전 제외
+  - Main Service: SES 전송 권한
+  - AI Service: Bedrock 접근 권한
+  - MySQL/Redis: EC2 메타데이터 조회 권한
+- **민감 정보 분리**: Git에서 완전 제외 (.gitignore)
+- **Actuator 보안**: VPC 내부(10.0.0.0/16)에서만 접근
 
 ## 📚 문서 링크
 
+### 인프라 가이드
 - **[Terraform 상세 가이드](terraform/README.md)**: 인프라 모듈별 설정
 - **[Ansible 실행 가이드](ansible/README.md)**: 서버 설정 단계별 실행
-- **AWS 서비스 설정**: CloudFront, SES, Bedrock 연동 방법
+
+### 트러블슈팅
+- **[CloudFront 403 오류 해결](docs/cloudfront-403-troubleshooting.md)**: 커스텀 도메인 설정 문제 해결
+- **[VPC 내부 연결성 가이드](docs/vpc-internal-connectivity.md)**: MySQL/Redis 연결 문제 진단
+- **[일반 트러블슈팅](docs/troubleshooting-guide.md)**: 자주 발생하는 문제 해결
+
+### AWS 서비스 설정
+- CloudFront 커스텀 도메인 및 ACM 인증서
+- SES 이메일 서비스 연동
+- Bedrock AI 서비스 연동
 
 ## 💡 주요 특징
 
 - ✅ **분산 마이크로서비스**: 4개 독립 서비스
 - ✅ **React + Spring Boot**: 현대적 풀스택 아키텍처
+- ✅ **CloudFront CDN**: 커스텀 도메인 + HTTPS (mechuragi.kro.kr)
+- ✅ **Nginx Reverse Proxy**: CloudFront → Nginx → Spring Boot
 - ✅ **Blue-Green 배포**: 무중단 서비스 업데이트
 - ✅ **CI/CD 파이프라인**: GitHub Actions 자동 배포
 - ✅ **Docker 컨테이너화**: 멀티플랫폼 지원
 - ✅ **실시간 알림**: Discord 배포 상태 모니터링
 - ✅ **비용 최적화**: 75% EC2 비용 절감
-- ✅ **보안 중심**: 4계층 네트워크 보안
-- ✅ **CDN 최적화**: 3-Origin CloudFront
+- ✅ **보안 중심**: 4계층 네트워크 보안 + VPC 격리
+- ✅ **CDN 최적화**: 3-Origin CloudFront (React/Images/API)
 - ✅ **AI 통합**: AWS Bedrock 연동
 - ✅ **자동화**: IaC + Configuration Management
+- ✅ **검증 강화**: Ansible 자동 검증 (MySQL/Redis/Nginx)
 - ✅ **확장 가능**: 모듈화된 아키텍처
 
 ---
 
-## 🆕 최신 업데이트 (v2.0)
+## 🆕 최신 업데이트 (v2.1)
 
-### ✨ 새로운 기능
+### ✨ 새로운 기능 (v2.1)
+- **🌐 CloudFront 커스텀 도메인**: `mechuragi.kro.kr` HTTPS 지원
+- **🔒 ACM SSL 인증서**: TLS 1.2 암호화 통신
+- **🔄 Nginx Reverse Proxy**: CloudFront → Nginx → Spring Boot 아키텍처
+- **📊 Ansible 검증 강화**: MySQL/Redis 설치 후 자동 검증
+- **🔑 IAM 권한 최적화**: EC2 메타데이터 조회 권한 추가
+- **📝 트러블슈팅 문서**: CloudFront 403, VPC 연결성 가이드
+
+### 🔧 주요 개선사항 (v2.1)
+- **CloudFront Origin**: EC2:8080 → Nginx:80 → Spring:8080 (프록시 구조)
+- **Nginx 역할 명확화**: `/api/*`만 처리, 프론트엔드는 S3/CloudFront
+- **MySQL 사용자 권한**: VPC 내부(10.0.%)만 접근 허용 (보안 강화)
+- **Redis bind 설정**: 0.0.0.0으로 VPC 내부 통신 지원
+- **Ansible Playbook**: 상세한 검증 결과 출력 (서비스 상태, 포트, 설정)
+
+### 📦 이전 업데이트 (v2.0)
 - **🔄 Blue-Green 배포**: 메인 서비스 무중단 업데이트
 - **🤖 GitHub Actions CI/CD**: 자동 빌드, 테스트, 배포
 - **🐳 Docker 컨테이너화**: 멀티플랫폼 이미지 빌드 (ARM64/AMD64)
 - **💬 Discord 알림**: 실시간 배포 상태 모니터링
 - **🎯 AI 서비스 분리**: 독립적인 추천 서비스 (Port 8082)
-- **🔀 포트 최적화**: 서비스 간 포트 충돌 해결
-
-### 🔧 주요 개선사항
-- **메인 서비스**: Blue-Green 배포로 무중단 서비스
-- **AI 서비스**: 8081 → 8082 포트 변경으로 충돌 해결
-- **Nginx 설정**: Blue-Green 전환을 위한 동적 업스트림 구성
-- **Docker 네트워크**: `app_mechuragi-network`로 서비스 간 통신
-- **멀티플랫폼 빌드**: GitHub Actions에서 ARM64/AMD64 동시 지원
 
 ---
 
