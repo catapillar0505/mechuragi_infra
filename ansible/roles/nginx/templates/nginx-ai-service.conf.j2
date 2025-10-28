@@ -5,7 +5,7 @@ upstream ai_backend {
 
 server {
     listen 80;
-    server_name {{ ansible_host }} _;
+    server_name _;
 
     # 클라이언트 업로드 크기 제한
     client_max_body_size 10M;
