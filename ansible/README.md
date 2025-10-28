@@ -402,9 +402,6 @@ ansible cache -i inventory/hosts.yml -m shell \
 ansible main_service,ai_service -i inventory/hosts.yml -m shell \
   -a "systemctl status nginx" --become
 
-# nginx가 실제 어떤 포트에서 동작 중인지 확인
-ansible main_service,ai_service -i inventory/hosts.yml -m shell -a "sudo netstat -tulnp | grep nginx"
-
 ```
 
 ### 포트 리스닝 확인
