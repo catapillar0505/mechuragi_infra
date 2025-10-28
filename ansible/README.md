@@ -21,11 +21,6 @@ ansible/
 ├── ansible.cfg                     # Ansible 설정
 ├── group_vars/                     # 🌐 변수 관리
 │   ├── all/
-│   │   └── main.yml               # 전역 공통 변수
-│   ├── database/
-│   │   └── mysql.yml              # MySQL 변수 (비밀번호 등)
-│   └── cache/
-│       └── redis.yml              # Redis 변수
 ├── inventory/                      # 📦 서버 인벤토리
 │   └── hosts.yml                  # 서버 목록 및 그룹
 ├── roles/                          # 🎭 서비스별 Role
