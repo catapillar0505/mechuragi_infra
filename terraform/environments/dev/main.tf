@@ -119,6 +119,7 @@ module "cloudfront" {
   s3_images_bucket_name             = module.s3.s3_images_bucket_name
   s3_images_bucket_domain_name      = module.s3.s3_images_bucket_domain_name
   s3_images_bucket_arn              = module.s3.s3_images_bucket_arn
+  main_service_public_dns           = module.compute.main_service_public_dns
   domain_name                       = var.domain_name
   acm_certificate_arn               = module.acm_certificate.certificate_arn
   use_custom_domain                 = var.use_custom_domain

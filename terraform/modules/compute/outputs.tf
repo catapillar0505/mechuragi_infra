@@ -14,6 +14,11 @@ output "main_service_private_ip" {
   value       = aws_instance.main_service.private_ip
 }
 
+output "main_service_public_dns" {
+  description = "Public DNS name of the main service instance"
+  value       = aws_instance.main_service.public_dns
+}
+
 # AI 추천 서비스 인스턴스 정보
 output "ai_service_instance_id" {
   description = "ID of the AI service EC2 instance"

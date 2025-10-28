@@ -32,13 +32,13 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     origin_access_control_id = aws_cloudfront_origin_access_control.images_oac.id
   }
 
-  # Spring Boot API 서버 오리진
+  # Spring Boot API 서버 오리진 (Nginx → Spring Boot)
   origin {
-    domain_name = var.web_domain
+    domain_name = var.main_service_public_dns
     origin_id   = "api-origin"
 
     custom_origin_config {
-      http_port              = 8080
+      http_port              = 80   # Nginx는 80번 포트에서 리스닝
       https_port             = 443
       origin_protocol_policy = "http-only"  # EC2는 HTTP로 접근
       origin_ssl_protocols   = ["TLSv1.2"]

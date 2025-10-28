@@ -34,3 +34,6 @@ redis_maxclients: 100
 # Redis 슬로우 로그 설정
 redis_slowlog_log_slower_than: 10000
 redis_slowlog_max_len: 128
+
+# Redis 보안 설정 (선택사항)
+# redis_password: "your_secure_password_here"

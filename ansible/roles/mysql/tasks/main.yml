@@ -14,6 +14,14 @@
     backup: yes
   notify: MySQL 재시작
 
+- name: 기본 mysqld.cnf의 bind-address 주석 처리 (중복 설정 방지)
+  lineinfile:
+    path: /etc/mysql/mysql.conf.d/mysqld.cnf
+    regexp: '^bind-address\s*='
+    line: '# bind-address = 127.0.0.1  # Commented out by Ansible - using mechuragi.cnf instead'
+    backup: yes
+  notify: MySQL 재시작
+
 - name: /root/.my.cnf 파일 생성
   template:
     src: root-my.cnf.j2
@@ -29,18 +37,31 @@
     enabled: yes
 
 - name: 애플리케이션 데이터베이스 생성
-  mysql_db:
-    name: "{{ mysql_database }}"
-    state: present
+  shell: |
+    sudo mysql -e "CREATE DATABASE IF NOT EXISTS {{ mysql_database }};"
+  register: db_creation
+  changed_when: false
   ignore_errors: yes
 
-- name: 애플리케이션 사용자 생성
-  mysql_user:
-    name: "{{ mysql_app_user }}"
-    password: "{{ mysql_app_password }}"
-    priv: "{{ mysql_database }}.*:ALL"
-    host: "%"
-    state: present
+- name: 애플리케이션 사용자 생성 및 권한 부여 (VPC 내부)
+  shell: |
+    sudo mysql -e "CREATE USER IF NOT EXISTS '{{ mysql_app_user }}'@'10.0.%' IDENTIFIED BY '{{ mysql_app_password }}';"
+    sudo mysql -e "GRANT ALL PRIVILEGES ON {{ mysql_database }}.* TO '{{ mysql_app_user }}'@'10.0.%';"
+  register: user_creation_vpc
+  changed_when: false
+  ignore_errors: yes
+
+- name: 애플리케이션 사용자 생성 및 권한 부여 (localhost)
+  shell: |
+    sudo mysql -e "CREATE USER IF NOT EXISTS '{{ mysql_app_user }}'@'localhost' IDENTIFIED BY '{{ mysql_app_password }}';"
+    sudo mysql -e "GRANT ALL PRIVILEGES ON {{ mysql_database }}.* TO '{{ mysql_app_user }}'@'localhost';"
+  register: user_creation_local
+  changed_when: false
+  ignore_errors: yes
+
+- name: 권한 플러시
+  shell: sudo mysql -e "FLUSH PRIVILEGES;"
+  changed_when: false
   ignore_errors: yes
 
 - name: MySQL 설치 완료 메시지

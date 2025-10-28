@@ -76,7 +76,7 @@ variable "subject_alternative_names" {
 variable "use_custom_domain" {
   description = "Enable custom domain for CloudFront (only after ACM certificate is validated)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "wait_for_acm_validation" {

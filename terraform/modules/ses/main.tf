@@ -121,3 +121,21 @@ resource "aws_iam_instance_profile" "ses_profile" {
   name = "${var.project_name}-${var.environment}-ses-profile"
   role = aws_iam_role.ses_sending_role.name
 }
+
+# EC2 메타데이터 및 Security Group 조회 권한 (Ansible 테스트용)
+data "aws_iam_policy_document" "ec2_describe_policy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeInstances",
+      "ec2:DescribeSecurityGroups"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "ec2_describe_policy" {
+  name   = "${var.project_name}-${var.environment}-ec2-describe-policy"
+  role   = aws_iam_role.ses_sending_role.id
+  policy = data.aws_iam_policy_document.ec2_describe_policy.json
+}

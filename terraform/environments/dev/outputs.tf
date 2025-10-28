@@ -115,3 +115,8 @@ output "acm_domain_validation_options" {
   description = "kro.kr DNS 관리 페이지에 추가해야 할 CNAME 레코드"
   value       = module.acm_certificate.domain_validation_options
 }
+
+output "main_service_public_dns" {
+  description = "Public DNS name of the main service instance"
+  value       = module.compute.main_service_public_dns
+}

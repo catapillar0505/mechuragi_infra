@@ -60,9 +60,14 @@ variable "s3_bucket_arn" {
 }
 
 variable "web_domain" {
-  description = "Domain for web"
+  description = "Domain for web (deprecated - use main_service_public_dns instead)"
   type        = string
   default     = "mechuragi.kro.kr"
+}
+
+variable "main_service_public_dns" {
+  description = "Public DNS name of the main service EC2 instance (e.g., ec2-X-X-X-X.ap-northeast-2.compute.amazonaws.com)"
+  type        = string
 }
 
 # 커스텀 도메인 및 인증서 관련 변수
@@ -81,5 +86,5 @@ variable "acm_certificate_arn" {
 variable "use_custom_domain" {
   description = "Enable custom domain for CloudFront (only after ACM certificate is validated)"
   type        = bool
-  default     = false
+  default     = true
 }

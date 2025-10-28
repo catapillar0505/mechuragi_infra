@@ -9,7 +9,7 @@ upstream backend {
 
 server {
     listen 80;
-    server_name {{ ansible_host }} _;
+    server_name _;
 
     # 클라이언트 업로드 크기 제한
     client_max_body_size 10M;
@@ -83,29 +83,12 @@ server {
         deny all;
     }
 
-    # 기본 경로
+    # 기본 경로 - 프론트엔드는 CloudFront/S3에서 제공되므로 404 응답
+    # Nginx는 오직 /api/* 경로만 처리
     location / {
-        proxy_pass http://backend/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # CORS headers if needed
-        add_header 'Access-Control-Allow-Origin' '*' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-
-        if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Max-Age' 1728000;
-            add_header 'Content-Type' 'text/plain; charset=utf-8';
-            add_header 'Content-Length' 0;
-            return 204;
-        }
-
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        access_log off;
+        return 404 "This server only handles /api/* requests. Frontend is served via CloudFront.\n";
+        add_header Content-Type text/plain;
     }
 
     # 에러 페이지

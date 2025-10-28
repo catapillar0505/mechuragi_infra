@@ -8,9 +8,101 @@
     - mysql
 
   post_tasks:
-    - name: MySQL 연결 테스트
+    - name: MySQL 서비스 상태 확인
+      systemd:
+        name: mysql
+        state: started
+      register: mysql_service_status
+      ignore_errors: yes
+
+    - name: MySQL 프로세스 확인
+      shell: ps aux | grep mysqld | grep -v grep
+      register: mysql_process
+      ignore_errors: yes
+
+    - name: MySQL 포트 리스닝 확인
+      shell: ss -tlnp | grep 3306
+      register: mysql_port_listen
+      ignore_errors: yes
+
+    - name: MySQL bind-address 설정 확인
+      shell: grep -h "^bind-address" /etc/mysql/mysql.conf.d/*.cnf 2>/dev/null || echo "not found"
+      register: mysql_bind_config
+      ignore_errors: yes
+
+    - name: MySQL 사용자 권한 확인
+      shell: sudo mysql -e "SELECT user, host FROM mysql.user WHERE user='{{ mysql_app_user }}';"
+      register: mysql_user_check
+      ignore_errors: yes
+
+    - name: MySQL 데이터베이스 확인
+      shell: sudo mysql -e "SHOW DATABASES LIKE '{{ mysql_database }}';"
+      register: mysql_db_check
+      ignore_errors: yes
+
+    - name: MySQL 연결 테스트 (로컬)
       mysql_db:
         login_user: "{{ mysql_app_user }}"
         login_password: "{{ mysql_app_password }}"
         name: "{{ mysql_database }}"
         state: present
+      register: mysql_connection_test
+      ignore_errors: yes
+
+    - name: MySQL 버전 확인
+      shell: mysql --version
+      register: mysql_version
+      ignore_errors: yes
+
+    - name: MySQL 설치 및 설정 검증 결과
+      debug:
+        msg: |
+
+          ==========================================
+          🗄️  MySQL 데이터베이스 서버 검증 결과
+          ==========================================
+
+          1. 서비스 상태:
+             {{ '✅ MySQL 서비스 실행 중' if mysql_service_status is succeeded else '❌ MySQL 서비스 중단됨' }}
+
+          2. 프로세스 확인:
+             {{ '✅ mysqld 프로세스 실행 중' if mysql_process.rc == 0 else '❌ mysqld 프로세스 없음' }}
+
+          3. 포트 리스닝 (3306):
+             {{ mysql_port_listen.stdout if mysql_port_listen.rc == 0 else '❌ 포트 3306 리스닝하지 않음' }}
+             {% if '0.0.0.0:3306' in mysql_port_listen.stdout %}
+             ✅ 모든 인터페이스에서 수신 (0.0.0.0:3306)
+             {% elif '127.0.0.1:3306' in mysql_port_listen.stdout %}
+             ⚠️  localhost에서만 수신 (외부 접근 불가)
+             {% endif %}
+
+          4. bind-address 설정:
+             {{ mysql_bind_config.stdout }}
+             {% if '0.0.0.0' in mysql_bind_config.stdout %}
+             ✅ VPC 내부 접근 가능 (bind-address = 0.0.0.0)
+             {% elif '127.0.0.1' in mysql_bind_config.stdout %}
+             ❌ localhost만 허용 (bind-address = 127.0.0.1)
+             {% endif %}
+
+          5. 애플리케이션 사용자 권한:
+             {{ mysql_user_check.stdout if mysql_user_check.rc == 0 else '❌ 사용자 확인 실패' }}
+             {% if mysql_user_check.rc == 0 and '10.0.%' in mysql_user_check.stdout %}
+             ✅ VPC 내부 접근 허용됨 (10.0.%)
+             {% elif mysql_user_check.rc == 0 and 'localhost' in mysql_user_check.stdout %}
+             ⚠️  localhost에서만 접근 가능
+             {% endif %}
+
+          6. 데이터베이스 존재:
+             {{ '✅ ' + mysql_database + ' 데이터베이스 존재' if mysql_db_check.rc == 0 and mysql_database in mysql_db_check.stdout else '❌ 데이터베이스 없음' }}
+
+          7. 연결 테스트:
+             {{ '✅ MySQL 연결 성공' if mysql_connection_test is succeeded else '❌ MySQL 연결 실패' }}
+
+          8. MySQL 버전:
+             {{ mysql_version.stdout if mysql_version.rc == 0 else '확인 불가' }}
+
+          {% if mysql_service_status is succeeded and mysql_process.rc == 0 and '0.0.0.0:3306' in mysql_port_listen.stdout and mysql_connection_test is succeeded %}
+          ✅ MySQL 데이터베이스 서버 설치 및 설정 완료!
+          {% else %}
+          ⚠️  일부 설정이 올바르지 않습니다. 위 내용을 확인하세요.
+          {% endif %}

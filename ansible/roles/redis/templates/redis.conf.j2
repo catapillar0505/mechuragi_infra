@@ -3,7 +3,14 @@
 # Network
 bind 0.0.0.0
 port {{ redis_port }}
-protected-mode no
+protected-mode yes
+
+# Security - VPC 내부 통신용 (선택사항)
+{% if redis_password is defined and redis_password != '' %}
+requirepass {{ redis_password }}
+{% else %}
+# requirepass your_password_here  # 필요시 비밀번호 설정
+{% endif %}
 
 # General
 daemonize yes

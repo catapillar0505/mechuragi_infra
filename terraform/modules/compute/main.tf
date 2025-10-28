@@ -19,6 +19,57 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+# 현재 AWS 계정 및 리전 정보
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+# EC2 메타데이터 조회용 IAM Role (MySQL, Redis용)
+resource "aws_iam_role" "ec2_describe_role" {
+  name = "${var.project_name}-${var.environment}-ec2-describe-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-ec2-describe-role"
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+# EC2 메타데이터 및 Security Group 조회 권한
+data "aws_iam_policy_document" "ec2_describe_policy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeInstances",
+      "ec2:DescribeSecurityGroups"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "ec2_describe_policy" {
+  name   = "${var.project_name}-${var.environment}-ec2-describe-policy"
+  role   = aws_iam_role.ec2_describe_role.id
+  policy = data.aws_iam_policy_document.ec2_describe_policy.json
+}
+
+resource "aws_iam_instance_profile" "ec2_describe_profile" {
+  name = "${var.project_name}-${var.environment}-ec2-describe-profile"
+  role = aws_iam_role.ec2_describe_role.name
+}
+
 # 메인 서비스용 ENI (사설 IP 고정)
 resource "aws_network_interface" "main_service_eni" {
   subnet_id       = var.public_subnet_id
@@ -126,9 +177,10 @@ resource "aws_eip" "mysql" {
 
 # MySQL 데이터베이스용 EC2 인스턴스 (네이티브)
 resource "aws_instance" "mysql" {
-  ami           = data.aws_ami.ubuntu.id
-  instance_type = var.mysql_instance_type
-  key_name      = var.key_pair_name
+  ami                  = data.aws_ami.ubuntu.id
+  instance_type        = var.mysql_instance_type
+  key_name             = var.key_pair_name
+  iam_instance_profile = aws_iam_instance_profile.ec2_describe_profile.name
 
   network_interface {
     network_interface_id = aws_network_interface.mysql_eni.id
@@ -172,9 +224,10 @@ resource "aws_eip" "redis" {
 
 # Redis 캐시 서버용 EC2 인스턴스 (네이티브)
 resource "aws_instance" "redis" {
-  ami           = data.aws_ami.ubuntu.id
-  instance_type = var.redis_instance_type
-  key_name      = var.key_pair_name
+  ami                  = data.aws_ami.ubuntu.id
+  instance_type        = var.redis_instance_type
+  key_name             = var.key_pair_name
+  iam_instance_profile = aws_iam_instance_profile.ec2_describe_profile.name
 
   network_interface {
     network_interface_id = aws_network_interface.redis_eni.id
