@@ -100,6 +100,21 @@ output "bedrock_log_group" {
   value       = module.bedrock.cloudwatch_log_group_name
 }
 
+output "bedrock_chat_model" {
+  description = "Bedrock chat model ID"
+  value       = var.bedrock_chat_model
+}
+
+output "bedrock_smart_model" {
+  description = "Bedrock smart model ID"
+  value       = var.bedrock_smart_model
+}
+
+output "bedrock_embedding_model" {
+  description = "Bedrock embedding model ID"
+  value       = var.bedrock_embedding_model
+}
+
 # ACM Certificate outputs
 output "acm_certificate_arn" {
   description = "ACM certificate ARN for CloudFront"

@@ -1,440 +1,589 @@
-# Ansible Roles 기반 플레이북 실행 가이드
+# Ansible 서버 구성 가이드
+
+메추라기 분산 인프라의 서버 자동 구성을 담당하는 Ansible 저장소입니다. MySQL, Redis, Nginx 등의 핵심 서비스를 자동으로 설치하고 설정합니다.
 
 ## 📋 개요
 
-메추라기 분산 인프라를 위한 Ansible Roles 기반 구조입니다. **Blue-Green 배포**, **CI/CD 파이프라인**, **Docker 컨테이너화**를 지원하며, 각 서비스별로 재사용 가능한 roles로 분리하고, 변수 관리를 통해 책임을 명확히 하고 유지보수성을 향상시켰습니다.
+이 Ansible 구성은 4개의 분산 서버(메인 서비스, AI 서비스, MySQL, Redis)를 자동으로 설정합니다. Terraform으로 인프라를 프로비저닝한 후 Ansible로 각 서버의 소프트웨어 스택을 구성합니다.
 
-## 🆕 v2.0 업데이트 특징
-- **🔄 Blue-Green 무중단 배포**: 메인 서비스 8080/8081 포트 전환
-- **🤖 GitHub Actions 연동**: 자동 빌드, 테스트, 배포 파이프라인
-- **🐳 멀티플랫폼 Docker**: ARM64/AMD64 지원
-- **💬 Discord 실시간 알림**: 배포 상태 모니터링
-- **🎯 AI 서비스 분리**: 포트 8082로 독립 운영
+### 주요 특징
+- ✅ **Role 기반 구조**: 재사용 가능한 모듈형 설계
+- ✅ **자동화된 설치**: MySQL, Redis, Docker, Nginx 자동 설치 및 설정
+- ✅ **자동 검증**: 각 서비스 설치 후 연결성 및 상태 자동 확인
+- ✅ **VPC 최적화**: 내부 통신 설정 (MySQL, Redis)
+- ✅ **변수 중앙 관리**: group_vars를 통한 통합 변수 관리
 
 ## 📁 디렉토리 구조
 
 ```
 ansible/
-├── README.md                          # 이 가이드 파일
-├── ansible.cfg                        # Ansible 설정
-├── group_vars/                        # 🌐 전역 변수
+├── README.md                       # 이 가이드 파일
+├── ansible.cfg                     # Ansible 설정
+├── group_vars/                     # 🌐 변수 관리
 │   ├── all/
-│   │   ├── common.yml                 # 프로젝트 공통 설정
-│   │   ├── networking.yml             # 네트워크 설정
-│   │   └── aws.yml                    # AWS 서비스 설정
-│   ├── main_service/
-│   │   └── application.yml            # 메인 서비스 설정
-│   ├── ai_service/
-│   │   └── application.yml            # AI 서비스 설정
+│   │   └── main.yml               # 전역 공통 변수
 │   ├── database/
-│   │   └── mysql.yml                  # MySQL 설정 (비밀번호 포함)
+│   │   └── mysql.yml              # MySQL 변수 (비밀번호 등)
 │   └── cache/
-│       └── redis.yml                  # Redis 설정
-├── inventory/                         # 📦 서버 인벤토리
-│   └── hosts.yml                      # 서버 목록
-├── roles/                             # 🎭 재사용 가능한 역할들
-│   ├── common/                        # 시스템 공통 설정
-│   ├── docker/                        # Docker 환경 구축
-│   ├── mysql/                         # MySQL 데이터베이스
-│   ├── redis/                         # Redis 캐시
-│   ├── nginx/                         # Nginx 리버스 프록시
-│   └── application/                   # Spring Boot 애플리케이션
-├── playbooks/                         # 📖 실행 플레이북들
-│   ├── setup-database.yml            # 데이터베이스 구축
-│   ├── setup-cache.yml               # 캐시 서버 구축
-│   ├── setup-ai-service.yml          # AI 추천 서비스
-│   ├── setup-main-service.yml        # 메인 서비스
-│   ├── deploy-all-services.yml       # 🚀 전체 배포
-│   └── backup/                       # 기존 플레이북 백업
-├── group_vars_backup/                 # 기존 group_vars 백업
-└── templates_backup/                  # 기존 템플릿 백업
+│       └── redis.yml              # Redis 변수
+├── inventory/                      # 📦 서버 인벤토리
+│   └── hosts.yml                  # 서버 목록 및 그룹
+├── roles/                          # 🎭 서비스별 Role
+│   ├── common/                    # 기본 시스템 설정
+│   │   ├── defaults/              # 기본 변수
+│   │   └── tasks/                 # 실행 태스크
+│   ├── docker/                    # Docker 환경
+│   │   ├── defaults/
+│   │   ├── handlers/              # 서비스 재시작 핸들러
+│   │   └── tasks/
+│   ├── mysql/                     # MySQL 데이터베이스
+│   │   ├── defaults/
+│   │   ├── files/                 # 설정 파일
+│   │   ├── handlers/
+│   │   ├── tasks/
+│   │   └── templates/             # Jinja2 템플릿
+│   ├── redis/                     # Redis 캐시
+│   │   ├── defaults/
+│   │   ├── files/
+│   │   ├── handlers/
+│   │   ├── tasks/
+│   │   └── templates/
+│   └── nginx/                     # Nginx 템플릿
+│       └── templates/             # Nginx 설정 템플릿
+└── playbooks/                      # 📖 실행 플레이북
+    ├── deploy-all-services.yml    # 🚀 전체 인프라 배포
+    ├── setup-basic-system.yml     # 기본 시스템 설정
+    ├── setup-database.yml         # MySQL 설치
+    ├── setup-cache.yml            # Redis 설치
+    ├── setup-docker-only.yml      # Docker 설치
+    ├── test-connectivity.yml      # 연결성 테스트
+    └── test-front.yml             # 프론트엔드 테스트
 ```
 
-## 🎭 Roles 상세 설명
+## 🎭 Roles 설명
 
-### 1. **common** - 시스템 공통 설정
-- **목적**: 모든 서버의 기본 설정
-- **포함 기능**:
-  - 시스템 패키지 업데이트
-  - 기본 도구 설치 (curl, git, vim 등)
-  - 디렉토리 생성
-  - 시간대 및 로케일 설정
-  - 커널 매개변수 최적화
+### 1. common - 기본 시스템 설정
+모든 서버의 공통 설정을 담당합니다.
 
-### 2. **docker** - Docker 환경 구축
-- **목적**: Docker 및 Docker Compose 설치
-- **포함 기능**:
-  - Docker CE 설치
-  - Docker Compose 설치
-  - 사용자 그룹 설정
-  - Docker 서비스 시작
-- **의존성**: common
+**주요 기능:**
+- 시스템 패키지 업데이트
+- 기본 도구 설치 (curl, git, vim, htop 등)
+- 디렉토리 생성 및 권한 설정
+- 시간대 및 로케일 설정
 
-### 3. **mysql** - MySQL 데이터베이스
-- **목적**: MySQL 네이티브 설치 및 설정
-- **포함 기능**:
-  - MySQL 8.0 설치
-  - 데이터베이스 및 사용자 생성
-  - t3.small 최적화 설정
-  - 백업 스크립트 및 크론 설정
-  - 로그 로테이션
-- **의존성**: common
+**파일 구조:**
+```
+common/
+├── defaults/main.yml    # 기본 변수
+└── tasks/main.yml       # 실행 태스크
+```
 
-### 4. **redis** - Redis 캐시 서버
-- **목적**: Redis 네이티브 설치 및 설정
-- **포함 기능**:
-  - Redis 설치
-  - 메모리 최적화 설정
-  - 지속성 설정 (RDB + AOF)
-  - 백업 스크립트 및 크론 설정
-  - 시스템 튜닝
-- **의존성**: common
+### 2. docker - Docker 환경
+Docker 및 Docker Compose를 설치합니다.
 
-### 5. **nginx** - Nginx 리버스 프록시 & Blue-Green 로드밸런서
-- **목적**: Nginx 설치 및 Blue-Green 배포를 위한 로드밸런싱
-- **포함 기능**:
-  - Nginx 설치
-  - **Blue-Green 업스트림 설정**: 동적 포트 전환 (8080 ↔ 8081)
-  - 사이트 설정 파일 생성
-  - SSL 지원 (옵션)
-  - 보안 헤더 설정
-  - 헬스체크 기반 자동 전환
-- **의존성**: common
+**주요 기능:**
+- Docker CE 설치
+- Docker Compose 설치
+- Docker 서비스 시작 및 활성화
+- 사용자 그룹 설정
 
-### 6. **application** - Spring Boot 애플리케이션
-- **목적**: Docker 기반 Spring Boot 애플리케이션 배포
-- **포함 기능**:
-  - **Blue-Green 배포**: 메인 서비스 무중단 업데이트
-  - **CI/CD 연동**: GitHub Actions 자동 배포
-  - Docker Compose 파일 생성
-  - 환경변수 설정
-  - 로그 로테이션 설정
-  - 헬스체크 및 자동 전환
-- **의존성**: common, docker, nginx
+**파일 구조:**
+```
+docker/
+├── defaults/main.yml
+├── handlers/main.yml    # Docker 재시작 핸들러
+└── tasks/main.yml
+```
 
-## 🚀 플레이북 실행 순서
+### 3. mysql - MySQL 데이터베이스
+MySQL 8.0을 네이티브로 설치하고 VPC 내부 통신을 설정합니다.
 
-### 권장 실행 순서
-1. **데이터베이스 구축** → MySQL 서버 설정
-2. **캐시 서버 구축** → Redis 서버 설정
-3. **AI 추천 서비스** → AI 서비스 배포
-4. **메인 서비스** → 메인 애플리케이션 배포
+**주요 기능:**
+- MySQL 8.0 설치
+- 데이터베이스 및 사용자 생성
+- VPC 내부 접근 설정 (bind-address: 0.0.0.0)
+- t3.micro 최적화 설정
+- 백업 스크립트 및 크론 설정
+- 로그 로테이션
 
-또는 **전체 자동 배포**로 한 번에 모든 서비스를 배포할 수 있습니다.
+**파일 구조:**
+```
+mysql/
+├── defaults/main.yml
+├── files/               # 백업 스크립트 등
+├── handlers/main.yml    # MySQL 재시작 핸들러
+├── tasks/main.yml
+└── templates/           # my.cnf 등 설정 파일
+```
 
-## 🌍 변수 관리
+### 4. redis - Redis 캐시
+Redis를 네이티브로 설치하고 VPC 내부 통신을 설정합니다.
 
-### 변수 우선순위 (높음 → 낮음)
-1. **명령행 변수** (`-e key=value`)
-2. **전역 group_vars** (`group_vars/`)
-3. **Role defaults** (`roles/{role}/defaults/main.yml`)
+**주요 기능:**
+- Redis 설치
+- VPC 내부 접근 설정 (bind 0.0.0.0)
+- 메모리 최적화 설정
+- 지속성 설정 (RDB + AOF)
+- 백업 스크립트 및 크론 설정
+- 시스템 튜닝
 
-### 성능 설정 (t3.small 최적화)
+**파일 구조:**
+```
+redis/
+├── defaults/main.yml
+├── files/               # 백업 스크립트 등
+├── handlers/main.yml    # Redis 재시작 핸들러
+├── tasks/main.yml
+└── templates/           # redis.conf 등 설정 파일
+```
 
-| 구분 | 설정값 |
-|------|--------|
-| **인스턴스** | t3.small |
-| **MySQL 메모리** | 1GB |
-| **Redis 메모리** | 1GB |
-| **연결 수** | 100/100 |
-| **로그 레벨** | INFO |
-| **백업 주기** | 일간 |
+### 5. nginx - Nginx 템플릿
+Nginx 설정 템플릿만 제공합니다. (실제 설치는 playbook에서 직접 수행)
+
+**주요 기능:**
+- Main Service용 역방향 프록시 설정
+- AI Service용 역방향 프록시 설정
+- Blue-Green 배포 설정
+
+**파일 구조:**
+```
+nginx/
+└── templates/
+    ├── nginx-main-service.conf.j2   # 메인 서비스 Nginx 설정
+    ├── nginx-ai-service.conf.j2     # AI 서비스 Nginx 설정
+    └── blue-green-main.conf.j2      # Blue-Green 배포 설정
+```
+
+## 📖 Playbooks 설명
+
+### deploy-all-services.yml - 전체 인프라 배포 (권장)
+모든 서비스를 한 번에 배포합니다.
+
+**실행 순서:**
+1. MySQL 데이터베이스 구축
+2. Redis 캐시 구축
+3. Main Service Nginx 설치 및 시작
+4. AI Service Nginx 설치 및 시작
+5. 연결성 검증 (Main Service → MySQL, Redis)
+
+**사용법:**
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml
+```
+
+### setup-basic-system.yml - 기본 시스템 설정
+모든 서버에 공통 시스템 설정을 적용합니다.
+
+**주요 작업:**
+- common role 실행
+- AWS CLI 설치
+
+**사용법:**
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/setup-basic-system.yml
+```
+
+### setup-database.yml - MySQL 설치
+MySQL 서버를 설치하고 설정합니다.
+
+**주요 작업:**
+- MySQL 설치 (mysql role)
+- 서비스 상태 확인
+- VPC 내부 접근 확인
+- 연결 테스트
+
+**사용법:**
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml
+```
+
+### setup-cache.yml - Redis 설치
+Redis 서버를 설치하고 설정합니다.
+
+**주요 작업:**
+- common role 실행
+- Redis 설치 (redis role)
+- 서비스 상태 확인
+- VPC 내부 접근 확인
+- 연결 테스트
+
+**사용법:**
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml
+```
+
+### setup-docker-only.yml - Docker 설치
+메인/AI 서비스에 Docker만 설치합니다.
+
+**사용법:**
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/setup-docker-only.yml
+```
+
+### test-connectivity.yml - 연결성 테스트
+전체 인프라의 연결성을 종합적으로 테스트합니다.
+
+**사용법:**
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/test-connectivity.yml
+```
+
+### test-front.yml - 프론트엔드 테스트
+프론트엔드 관련 테스트를 수행합니다.
+
+**사용법:**
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/test-front.yml
+```
+
+## 🚀 사용 가이드
 
 ### 📝 사전 준비
 
-1. **인벤토리 IP 업데이트**
+1. **Terraform으로 인프라 프로비저닝**
    ```bash
-   # Terraform 출력에서 IP 주소 확인
    cd ../terraform/environments/dev
-   terraform output
-
-   # hosts.yml에 실제 IP 주소 입력
-   vi inventory/hosts.yml
+   terraform apply
+   terraform output  # IP 주소 확인
    ```
 
-2. **SSH 키 경로 확인**
+2. **인벤토리 파일 설정**
    ```bash
-   ls ~/.ssh/mechuragi-dev-key.pem
+   vi inventory/hosts.yml
+   # Terraform output의 IP 주소들을 입력
+   ```
+
+3. **SSH 키 권한 설정**
+   ```bash
    chmod 400 ~/.ssh/mechuragi-dev-key.pem
+   ```
+
+4. **연결 테스트**
+   ```bash
+   ansible all -i inventory/hosts.yml -m ping
    ```
 
 ### 🎯 실행 방법
 
-#### 1단계: 전체 자동 배포 (권장) ⭐
+#### 방법 1: 전체 자동 배포 (권장) ⭐
+
+한 번의 명령으로 모든 서비스를 배포합니다.
 
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml
 ```
 
-#### 2단계: 개별 서비스 배포
+**배포 결과:**
+- ✅ MySQL 데이터베이스 설치 및 설정
+- ✅ Redis 캐시 설치 및 설정
+- ✅ Main Service Nginx 설치
+- ✅ AI Service Nginx 설치
+- ✅ 연결성 자동 검증
 
-**데이터베이스 구축**
+#### 방법 2: 개별 서비스 배포
+
+필요한 서비스만 개별적으로 배포합니다.
+
+**기본 시스템 설정:**
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/setup-basic-system.yml
+```
+
+**MySQL 데이터베이스:**
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml
 ```
 
-**캐시 서버 구축**
+**Redis 캐시:**
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml
 ```
 
-**AI 추천 서비스 구축**
+**Docker 환경:**
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/setup-ai-service.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup-docker-only.yml
 ```
 
-**메인 서비스 구축**
-```bash
-ansible-playbook -i inventory/hosts.yml playbooks/setup-main-service.yml
-```
+### 🔧 고급 사용법
 
-## 🔧 고급 사용법
+#### 특정 호스트만 대상
 
-### 특정 Role만 실행
-```bash
-# MySQL role만 실행
-ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --tags mysql
-
-# Docker role만 실행
-ansible-playbook -i inventory/hosts.yml playbooks/setup-main-service.yml --tags docker
-```
-
-### 변수 오버라이드
-```bash
-# MySQL 비밀번호 임시 변경
-ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml -e "mysql_root_password=newpassword"
-
-# Redis 메모리 제한 임시 변경
-ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml -e "redis_maxmemory=4gb"
-```
-
-### 특정 호스트만 대상
 ```bash
 # MySQL 서버만
 ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --limit database
 
 # 메인 서비스만
-ansible-playbook -i inventory/hosts.yml playbooks/setup-main-service.yml --limit main_service
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml --limit main_service
 ```
 
-### 변수 확인
+#### 변수 오버라이드
+
 ```bash
-# 변수 확인
-ansible-inventory -i inventory/hosts.yml --host mysql-server --vars
+# MySQL 비밀번호 임시 변경
+ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml \
+  -e "mysql_root_password=newpassword"
+
+# Redis 메모리 제한 임시 변경
+ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml \
+  -e "redis_maxmemory=2gb"
 ```
 
-## 📏 Roles 작성 규칙
+#### 드라이런 (변경사항 미리보기)
 
-### 1. 디렉토리 구조 표준
-```
-role_name/
-├── tasks/main.yml          # 🔧 주요 작업
-├── handlers/main.yml       # 🔔 이벤트 핸들러
-├── templates/              # 📝 Jinja2 템플릿
-├── files/                  # 📄 정적 파일
-├── vars/main.yml           # 🔧 Role 변수
-├── defaults/main.yml       # ⚙️ 기본값
-└── meta/main.yml           # 📋 메타데이터
-```
-
-### 2. 네이밍 규칙
-- **Role 이름**: 소문자, 하이픈 사용 (예: `mysql`, `redis`)
-- **Task 이름**: 한국어, 명확한 동작 설명
-- **Variable**: snake_case 사용
-- **Template**: `.j2` 확장자
-
-### 3. 의존성 관리
-- `meta/main.yml`에서 dependencies 명시
-- 순환 의존성 방지
-- common role을 베이스로 사용
-
-### 4. 변수 우선순위
-1. 명령행 변수 (`-e`)
-2. vars/main.yml
-3. group_vars/
-4. defaults/main.yml
-
-## 📊 로그 확인 방법
-
-### MySQL 로그 확인
 ```bash
-# MySQL 통합 로그 확인 스크립트 실행
-ansible mysql-server -i inventory/hosts.yml -m shell -a "/usr/local/bin/mysql-logs.sh" --become
-
-# 또는 서버에 직접 접속해서 실행
-ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@<mysql-server-ip>
-sudo /usr/local/bin/mysql-logs.sh
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml --check
 ```
 
-### 개별 로그 파일 확인
+#### 상세 로그 출력
+
 ```bash
-# MySQL 에러 로그
-ansible mysql-server -i inventory/hosts.yml -m shell -a "tail -20 /var/log/mechuragi/mysql/error.log" --become
-
-# MySQL 슬로우 쿼리 로그
-ansible mysql-server -i inventory/hosts.yml -m shell -a "tail -10 /var/log/mechuragi/mysql/slow.log" --become
-
-# Redis 로그
-ansible redis-server -i inventory/hosts.yml -m shell -a "tail -20 /var/log/redis/redis-server.log" --become
-
-# 애플리케이션 로그 (Docker 컨테이너)
-# Blue-Green 배포 컨테이너 로그
-ansible main-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-main-blue --tail 20" --become
-ansible main-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-main-green --tail 20" --become
-ansible ai-service-server -i inventory/hosts.yml -m shell -a "docker logs mechuragi-ai-service --tail 20" --become
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml -v   # 일반
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml -vv  # 상세
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml -vvv # 매우 상세
 ```
+
+## 🌍 변수 관리
+
+### 변수 우선순위 (높음 → 낮음)
+
+1. **명령행 변수** (`-e key=value`)
+2. **전역 group_vars** (`group_vars/`)
+3. **Role defaults** (`roles/{role}/defaults/main.yml`)
+
+### 주요 변수 파일
+
+#### group_vars/all/main.yml
+전역 공통 변수를 정의합니다.
+
+**주요 변수:**
+```yaml
+project_name: mechuragi
+environment: dev
+redis_port: 6379
+mysql_database: mechuragi
+mysql_app_user: mechuragi_user
+```
+
+#### group_vars/database/mysql.yml
+MySQL 관련 변수를 정의합니다.
+
+**주요 변수:**
+```yaml
+mysql_root_password: your_password
+mysql_app_password: your_password
+mysql_maxmemory: 1gb
+```
+
+#### group_vars/cache/redis.yml
+Redis 관련 변수를 정의합니다.
+
+**주요 변수:**
+```yaml
+redis_maxmemory: 1gb
+redis_maxmemory_policy: allkeys-lru
+```
+
+### inventory/hosts.yml
+서버 그룹 및 접속 정보를 정의합니다.
+
+**구조 예시:**
+```yaml
+all:
+  children:
+    main_service:
+      hosts:
+        main-service-server:
+          ansible_host: XXX.XXX.XXX.XXX
+          private_ip: 10.0.2.XX
+
+    ai_service:
+      hosts:
+        ai-service-server:
+          ansible_host: XXX.XXX.XXX.XXX
+          private_ip: 10.0.2.XX
+
+    database:
+      hosts:
+        mysql-server:
+          ansible_host: XXX.XXX.XXX.XXX
+          private_ip: 10.0.2.XX
+
+    cache:
+      hosts:
+        redis-server:
+          ansible_host: XXX.XXX.XXX.XXX
+          private_ip: 10.0.2.XX
+```
+
+## 📊 모니터링 및 검증
 
 ### 서비스 상태 확인
+
 ```bash
-# 모든 서비스 상태 한번에 확인
-ansible all -i inventory/hosts.yml -m shell -a "systemctl status mysql redis-server nginx --no-pager || echo 'Some services not found on this server'" --become
+# 모든 서버 Ping 테스트
+ansible all -i inventory/hosts.yml -m ping
 
-# 포트 리스닝 상태 확인
-ansible all -i inventory/hosts.yml -m shell -a "ss -tlnp | grep -E '3306|6379|8080|8081|8082'" --become
+# MySQL 상태 확인
+ansible database -i inventory/hosts.yml -m shell \
+  -a "systemctl status mysql" --become
 
-# Blue-Green 배포 상태 확인
-ansible main-service-server -i inventory/hosts.yml -m shell -a "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" --become
+# Redis 상태 확인
+ansible cache -i inventory/hosts.yml -m shell \
+  -a "systemctl status redis-server" --become
+
+# Nginx 상태 확인
+ansible main_service,ai_service -i inventory/hosts.yml -m shell \
+  -a "systemctl status nginx" --become
+```
+
+### 포트 리스닝 확인
+
+```bash
+# 모든 서버의 포트 확인
+ansible all -i inventory/hosts.yml -m shell \
+  -a "ss -tlnp | grep -E '3306|6379|8080|8081|8082|80'" --become
 ```
 
 ### 연결성 테스트
+
 ```bash
-# 전체 서비스 간 연결성 테스트
+# 전체 연결성 테스트
 ansible-playbook -i inventory/hosts.yml playbooks/test-connectivity.yml
 
 # MySQL 연결 테스트
-ansible mysql-server -i inventory/hosts.yml -m shell -a "mysql -e 'SELECT \"MySQL 연결 성공!\" as status;'" --become
+ansible database -i inventory/hosts.yml -m shell \
+  -a "mysql -e 'SELECT \"MySQL 연결 성공!\" as status;'" --become
 
 # Redis 연결 테스트
-ansible redis-server -i inventory/hosts.yml -m shell -a "redis-cli ping" --become
+ansible cache -i inventory/hosts.yml -m shell \
+  -a "redis-cli ping" --become
 ```
 
-### 실시간 로그 모니터링
+### 로그 확인
+
 ```bash
-# MySQL 에러 로그 실시간 모니터링
-ansible mysql-server -i inventory/hosts.yml -m shell -a "tail -f /var/log/mechuragi/mysql/error.log" --become
+# MySQL 로그
+ansible database -i inventory/hosts.yml -m shell \
+  -a "tail -20 /var/log/mysql/error.log" --become
 
-# Redis 로그 실시간 모니터링
-ansible redis-server -i inventory/hosts.yml -m shell -a "tail -f /var/log/redis/redis-server.log" --become
-```
+# Redis 로그
+ansible cache -i inventory/hosts.yml -m shell \
+  -a "tail -20 /var/log/redis/redis-server.log" --become
 
-### Blue-Green 배포 특별 명령어
-```bash
-# Blue-Green 배포 상태 확인
-ansible main-service-server -i inventory/hosts.yml -m shell -a "curl -s http://localhost:8080/actuator/health" --become
-ansible main-service-server -i inventory/hosts.yml -m shell -a "curl -s http://localhost:8081/actuator/health" --become
-
-# 현재 활성 서비스 확인 (Nginx 업스트림)
-ansible main-service-server -i inventory/hosts.yml -m shell -a "grep 'server 127.0.0.1:' /etc/nginx/sites-available/main-service" --become
-
-# Blue-Green 배포 스크립트 실행
-ansible main-service-server -i inventory/hosts.yml -m shell -a "cd /home/ubuntu/app && ./scripts/blue-green-deploy.sh" --become
-
-# GitHub Actions 배포 로그 모니터링
-# https://github.com/USERNAME/REPO/actions
-
-# Discord 알림 확인
-# GitHub Actions에서 자동 전송
+# Nginx 로그
+ansible main_service -i inventory/hosts.yml -m shell \
+  -a "tail -20 /var/log/nginx/error.log" --become
 ```
 
 ## 🔍 트러블슈팅
 
-### Role 의존성 문제
-```bash
-# 의존성 확인
-ansible-galaxy list
+### 연결 실패
 
-# Role 강제 재실행
-ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --force-handlers
+**증상:** SSH 연결이 안됨
+```bash
+# 해결 1: SSH 키 권한 확인
+chmod 400 ~/.ssh/mechuragi-dev-key.pem
+
+# 해결 2: SSH 연결 테스트
+ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@XXX.XXX.XXX.XXX
+
+# 해결 3: 보안 그룹 확인
+# AWS 콘솔에서 22번 포트 열려있는지 확인
 ```
 
-### 템플릿 문제
+### MySQL 연결 실패
+
+**증상:** Main Service에서 MySQL 접근 불가
+
 ```bash
-# 템플릿 렌더링 테스트
-ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --check -v
+# 진단 1: MySQL bind-address 확인
+ansible database -i inventory/hosts.yml -m shell \
+  -a "grep bind-address /etc/mysql/mysql.conf.d/*.cnf" --become
+
+# 진단 2: MySQL 사용자 권한 확인
+ansible database -i inventory/hosts.yml -m shell \
+  -a "mysql -e \"SELECT user, host FROM mysql.user;\"" --become
+
+# 해결: setup-database.yml 재실행
+ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml
+```
+
+### Redis 연결 실패
+
+**증상:** Main Service에서 Redis 접근 불가
+
+```bash
+# 진단 1: Redis bind 설정 확인
+ansible cache -i inventory/hosts.yml -m shell \
+  -a "grep '^bind' /etc/redis/redis.conf" --become
+
+# 진단 2: Redis 포트 확인
+ansible cache -i inventory/hosts.yml -m shell \
+  -a "ss -tlnp | grep 6379" --become
+
+# 해결: setup-cache.yml 재실행
+ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml
+```
+
+### Playbook 실행 실패
+
+**증상:** 특정 태스크에서 실패
+
+```bash
+# 해결 1: 상세 로그로 재실행
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml -vvv
+
+# 해결 2: 특정 태스크부터 재실행 (--start-at-task)
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml \
+  --start-at-task="MySQL 설치"
+
+# 해결 3: 강제 핸들러 실행
+ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml \
+  --force-handlers
 ```
 
 ### 변수 확인
+
+**증상:** 변수가 올바르게 적용되지 않음
+
 ```bash
-# 호스트 변수 출력
+# 특정 호스트의 모든 변수 확인
 ansible-inventory -i inventory/hosts.yml --host mysql-server --vars
+
+# 전체 인벤토리 확인
+ansible-inventory -i inventory/hosts.yml --list
 ```
 
-### MySQL 연결 오류 해결
-```bash
-# MySQL 루트 패스워드 재설정이 필요한 경우
-ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml --tags mysql
+## 💡 베스트 프랙티스
 
-# /root/.my.cnf 파일 확인
-ansible mysql-server -i inventory/hosts.yml -m shell -a "cat /root/.my.cnf" --become
+### 1. 변수 관리
+- 민감 정보는 `group_vars/`에 저장하고 `.gitignore`에 추가
+- 환경별로 다른 값은 `group_vars/{group}/` 사용
+- 공통 값은 `group_vars/all/` 사용
 
-# MySQL 서비스 재시작
-ansible mysql-server -i inventory/hosts.yml -m systemd -a "name=mysql state=restarted" --become
-```
+### 2. 멱등성 유지
+- 모든 playbook은 여러 번 실행해도 안전해야 함
+- `state: present` 같은 멱등성 있는 모듈 사용
 
-### Blue-Green 배포 문제 해결
-```bash
-# Docker 네트워크 문제
-ansible main-service-server -i inventory/hosts.yml -m shell -a "docker network create app_mechuragi-network" --become
+### 3. 태그 활용
+- 큰 playbook은 태그로 분리하여 부분 실행 가능하게 함
+- 예: `--tags mysql` 또는 `--skip-tags backup`
 
-# Blue-Green 컨테이너 상태 확인
-ansible main-service-server -i inventory/hosts.yml -m shell -a "docker ps -a --filter name=mechuragi-main" --become
+### 4. 핸들러 사용
+- 설정 파일 변경 시에만 서비스 재시작
+- `notify`와 `handlers` 활용
 
-# Nginx 업스트림 설정 확인
-ansible main-service-server -i inventory/hosts.yml -m shell -a "nginx -t && systemctl reload nginx" --become
+### 5. 검증 강화
+- 각 playbook에 `post_tasks`로 검증 추가
+- 실패 시 명확한 에러 메시지 제공
 
-# 헬스체크 실패 시 수동 전환
-ansible main-service-server -i inventory/hosts.yml -m shell -a "cd /home/ubuntu/app && ./scripts/blue-green-deploy.sh rollback" --become
+## 🔗 관련 문서
 
-# GitHub Actions 재실행
-# GitHub 웹사이트에서 Re-run jobs 클릭
+- **[메인 README](../README.md)**: 전체 인프라 개요
+- **[Terraform 가이드](../terraform/README.md)**: 인프라 프로비저닝
+- **[CloudFront 설정](../docs/cloudfront-403-troubleshooting.md)**: CDN 설정
+- **[트러블슈팅](../docs/troubleshooting-guide.md)**: 일반 문제 해결
 
-# Discord 웹훅 테스트
-ansible main-service-server -i inventory/hosts.yml -m shell -a "curl -X POST YOUR_DISCORD_WEBHOOK_URL -H 'Content-Type: application/json' -d '{\"content\":\"Ansible 테스트 메시지\"}'" --become
-```
+---
 
-## 🎯 성능 및 보안
-
-### Role별 최적화
-- **MySQL**: t3.small 메모리 최적화 (1GB buffer pool)
-- **Redis**: LRU 정책, 1GB 메모리 제한
-- **Nginx**: gzip 압축, 보안 헤더
-- **Application**: 로그 크기 제한, 헬스체크
-
-### 보안 설정
-- 비밀번호는 `group_vars/database/mysql.yml`에서 관리
-- 템플릿에서 민감 정보 마스킹
-- 파일 권한 엄격 설정 (600/640)
-- SSH 점프 박스를 통한 보안 접근
-
-## 📈 확장 가이드
-
-### 새 Role 추가
-1. `roles/` 하위에 디렉토리 생성
-2. 표준 구조 따라 파일 작성
-3. `meta/main.yml`에서 의존성 정의
-4. 플레이북에서 role 호출
-
-### 기존 Role 수정
-1. `defaults/main.yml`에서 기본값 변경
-2. `tasks/main.yml`에서 로직 수정
-3. `templates/`에서 설정 파일 업데이트
-4. 테스트 후 배포
-
-## 🏗️ 인프라 구조
-
-### 4개 서버 분산 구조
-- **메인 서비스 서버** (Public): Spring Boot + Blue-Green 배포 + AWS SES + S3
-  - 포트: 8080 (Blue), 8081 (Green), 80/443 (Nginx)
-- **AI 서비스 서버** (Private): Spring Boot + AWS Bedrock
-  - 포트: 8082
-- **MySQL 서버** (Private): 네이티브 MySQL 설치
-  - 포트: 3306
-- **Redis 서버** (Private): 네이티브 Redis 설치
-  - 포트: 6379
-
-### 네트워크 구성
-- 메인 서비스만 Public IP 보유
-- 나머지 서버들은 SSH 점프 박스를 통해 접근
-- 내부 통신은 Private IP 사용
-- **Docker 네트워크**: `app_mechuragi-network`로 컨테이너 간 통신
-- **Blue-Green 전환**: Nginx가 8080 ↔ 8081 동적 라우팅
+**🎯 이 Ansible 구성은 메추라기 프로젝트의 서버 자동 설정을 담당하며, 인프라 배포 후 즉시 사용 가능한 환경을 제공합니다.**

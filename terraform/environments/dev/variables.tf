@@ -45,13 +45,13 @@ variable "ses_from_email" {
 variable "bedrock_chat_model" {
   description = "Bedrock chat model ID"
   type        = string
-  default     = "anthropic.claude-instant-v1"
+  default     = "anthropic.claude-3-haiku-20240307-v1:0"
 }
 
 variable "bedrock_smart_model" {
   description = "Bedrock smart model ID"
   type        = string
-  default     = "anthropic.claude-instant-v1"
+  default     = "anthropic.claude-3-haiku-20240307-v1:0"
 }
 
 variable "bedrock_embedding_model" {
