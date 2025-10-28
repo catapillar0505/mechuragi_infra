@@ -15,7 +15,7 @@ Bad request. We can't connect to the server for this app or website at this time
 CloudFront 배포에서 커스텀 도메인을 받아들이려면 다음 조건이 **모두** 충족되어야 합니다:
 
 1. **DNS CNAME 레코드 설정** ✅
-   - `mechuragi.kro.kr` → CloudFront 배포 도메인 (`d4pdjk57v9eg4.cloudfront.net`)
+   - `mechuragi.kro.kr` → CloudFront 배포 도메인
 
 2. **ACM SSL 인증서 발급 및 검증** ✅
    - us-east-1 리전에 인증서 생성
@@ -90,7 +90,7 @@ restrictions {
 ```nginx
 server {
     listen 80;
-    server_name {{ ansible_host }} _;  # 와일드카드로 모든 호스트 허용
+    server_name _;  # 와일드카드로 모든 호스트 허용
 
     # CloudFront 헤더 전달
     location /api/ {
