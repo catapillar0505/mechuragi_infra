@@ -89,8 +89,8 @@ resource "aws_security_group" "ai_service" {
   # Spring Boot AI 애플리케이션 포트 (VPC 내부에서만 접근)
   ingress {
     description = "Spring Boot AI App from VPC only"
-    from_port   = 8081
-    to_port     = 8081
+    from_port   = 8082
+    to_port     = 8082
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]  # 메인 서비스에서만 호출 가능
   }
