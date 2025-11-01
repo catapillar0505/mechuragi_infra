@@ -1,0 +1,93 @@
+---
+- name: 기본 시스템 설정
+  hosts: all
+  become: yes
+  vars_files:
+    - ../group_vars/all/main.yml
+  roles:
+    - common
+
+  tasks:
+    - name: AWS CLI 설치 확인
+      shell: which aws
+      register: awscli_check
+      ignore_errors: yes
+
+    - name: AWS CLI 설치 (없는 경우)
+      apt:
+        name: awscli
+        state: present
+        update_cache: yes
+      when: awscli_check.rc != 0
+      register: awscli_install
+
+    - name: AWS CLI 버전 확인
+      shell: aws --version
+      register: awscli_version
+      ignore_errors: yes
+
+    - name: AWS CLI 설치 결과
+      debug:
+        msg: |
+          🔧 AWS CLI:
+          {% if awscli_check.rc == 0 %}
+          ✅ 이미 설치됨 - {{ awscli_version.stdout }}
+          {% elif awscli_install is succeeded %}
+          ✅ 설치 완료 - {{ awscli_version.stdout }}
+          {% else %}
+          ❌ 설치 실패
+          {% endif %}
+
+    - name: MySQL 클라이언트 설치 확인
+      shell: which mysql
+      register: mysql_client_check
+      ignore_errors: yes
+
+    - name: MySQL 클라이언트 설치 (없는 경우)
+      apt:
+        name: mysql-client
+        state: present
+        update_cache: yes
+      when: mysql_client_check.rc != 0
+      register: mysql_client_install
+
+    - name: MySQL 클라이언트 설치 결과
+      debug:
+        msg: |
+          🔧 MySQL Client:
+          {% if mysql_client_check.rc == 0 %}
+          ✅ 이미 설치됨
+          {% elif mysql_client_install is succeeded %}
+          ✅ 설치 완료
+          {% else %}
+          ❌ 설치 실패
+          {% endif %}
+
+    - name: Redis 클라이언트 설치 확인
+      shell: which redis-cli
+      register: redis_client_check
+      ignore_errors: yes
+
+    - name: Redis 클라이언트 설치 (없는 경우)
+      apt:
+        name: redis-tools
+        state: present
+        update_cache: yes
+      when: redis_client_check.rc != 0
+      register: redis_client_install
+
+    - name: Redis 클라이언트 설치 결과
+      debug:
+        msg: |
+          🔧 Redis Client:
+          {% if redis_client_check.rc == 0 %}
+          ✅ 이미 설치됨
+          {% elif redis_client_install is succeeded %}
+          ✅ 설치 완료
+          {% else %}
+          ❌ 설치 실패
+          {% endif %}
+
+    - name: 시스템 설정 완료 확인
+      debug:
+        msg: "✅ {{ inventory_hostname }} 기본 시스템 설정 완료"

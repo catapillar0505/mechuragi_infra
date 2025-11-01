@@ -73,7 +73,7 @@ mechuragi-infra/
     ├── ansible.cfg                     # Ansible 설정
     ├── group_vars/
     │   └── all/
-    │       └── common.yml              # 통합 변수 설정
+    │       └── main.yml                # 통합 변수 설정
     ├── inventory/
     │   └── hosts.yml                   # 4개 서버 인벤토리
     ├── roles/                          # 🔧 Ansible 역할
@@ -81,17 +81,21 @@ mechuragi-infra/
     │   ├── docker/                     # Docker 환경
     │   ├── mysql/                      # MySQL 데이터베이스
     │   ├── redis/                      # Redis 캐시
-    │   ├── nginx/                      # 웹 서버 (역방향 프록시)
-    │   └── application/                # Spring Boot 애플리케이션
+    │   └── nginx/                      # Nginx 템플릿
     └── playbooks/                      # 🎮 실행 플레이북
-        ├── deploy-all-services.yml    # 전체 인프라 배포 (MySQL, Redis, Nginx)
-        ├── setup-basic-system.yml     # 기본 시스템 설정
-        ├── setup-database.yml         # MySQL 설치 및 검증
-        ├── setup-cache.yml            # Redis 설치 및 검증
-        ├── setup-docker-only.yml      # Docker만 설치
-        ├── test-connectivity.yml      # VPC 연결성 테스트
-        ├── test-front.yml             # 프론트엔드 테스트
-        └── backup/                    # 백업 플레이북
+        ├── setup/                      # 🔧 설치 및 구성
+        │   ├── deploy-all-services.yml    # 전체 인프라 배포
+        │   ├── setup-basic-system.yml     # 기본 시스템 설정
+        │   ├── setup-database.yml         # MySQL 설치
+        │   ├── setup-cache.yml            # Redis 설치
+        │   ├── setup-docker-only.yml      # Docker 설치
+        │   └── setup-nginx.yml            # Nginx 설치
+        └── test/                       # ✅ 검증 및 테스트
+            ├── test-connectivity.yml       # AI/Main 서비스 헬스체크
+            ├── test-db.yml                 # MySQL 연결성 테스트
+            ├── test-redis.yml              # Redis 연결성 테스트
+            ├── test-docker.yml             # Docker 설치 검증
+            └── test-front.yml              # 프론트엔드 테스트
 ```
 
 ## 🏛️ 인프라 구성
@@ -300,19 +304,22 @@ cp inventory/hosts.yml.template inventory/hosts.yml
 # Terraform 출력의 IP 주소들을 입력
 
 # 2. 변수 파일 설정
-vi group_vars/all/common.yml
+vi group_vars/all/main.yml
 # 필요한 변수들 설정
 
 # 3. 전체 인프라 배포 (권장)
-ansible-playbook -i inventory/hosts.yml playbooks/deploy-all-services.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup/deploy-all-services.yml
 
 # 또는 개별 설정 실행
-ansible-playbook -i inventory/hosts.yml playbooks/setup-basic-system.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup-database.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup-cache.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-basic-system.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-database.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-cache.yml
+ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-nginx.yml
 
-# 4. 연결성 테스트
-ansible-playbook -i inventory/hosts.yml playbooks/test-connectivity.yml
+# 4. 배포 검증
+ansible-playbook -i inventory/hosts.yml playbooks/test/test-db.yml
+ansible-playbook -i inventory/hosts.yml playbooks/test/test-redis.yml
+ansible-playbook -i inventory/hosts.yml playbooks/test/test-connectivity.yml
 ```
 
 ### 🎨 3단계: React 프론트엔드 배포
@@ -405,10 +412,10 @@ cd /home/ubuntu/app
 terraform apply -target=module.cloudfront
 
 # 특정 서버만 재설정
-ansible-playbook -i inventory/hosts.yml playbooks/setup-services.yml --limit ai_service
+ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-cache.yml --limit cache
 
-# 애플리케이션 배포 업데이트
-ansible-playbook -i inventory/hosts.yml playbooks/setup-applications.yml --tags deploy
+# 특정 서비스 재배포
+ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-database.yml --limit database
 
 # 배포 롤백 (Blue-Green)
 ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@XXX.XXX.XXX.XXX
@@ -424,7 +431,13 @@ ansible main_service -m command -a "docker logs mechuragi-main-green" -i invento
 ansible ai_service -m command -a "docker logs mechuragi-ai-service" -i inventory/hosts.yml
 
 # 네트워크 연결 테스트
-ansible-playbook -i inventory/hosts.yml playbooks/test-connectivity.yml
+ansible-playbook -i inventory/hosts.yml playbooks/test/test-connectivity.yml
+
+# MySQL 연결 테스트
+ansible-playbook -i inventory/hosts.yml playbooks/test/test-db.yml
+
+# Redis 연결 테스트
+ansible-playbook -i inventory/hosts.yml playbooks/test/test-redis.yml
 
 # 서비스 헬스체크
 curl -f http://XXX.XXX.XXX.XXX:8080/actuator/health
@@ -483,6 +496,87 @@ ansible all -m command -a "docker network create app_mechuragi-network" -i inven
 - **민감 정보 분리**: Git에서 완전 제외 (.gitignore)
 - **Actuator 보안**: VPC 내부(10.0.0.0/16)에서만 접근
 
+## 🔐 SSH 터널링 및 접근 구조
+
+### 🏗️ 터널링 구조
+```
+┌─────────────────┐
+│   개발자 PC     │
+│  (로컬 환경)    │
+└────────┬────────┘
+         │ SSH (22)
+         │ 공인 인터넷
+         ▼
+┌─────────────────────────────────────────┐
+│         AWS VPC (10.0.0.0/16)          │
+│                                         │
+│  ┌──────────────────┐ Level 1 (Public) │
+│  │  Main Service    │                  │
+│  │  - Public IP ✓   │ ◄─── SSH 게이트웨이
+│  │  - Private IP ✓  │                  │
+│  └────────┬─────────┘                  │
+│           │ VPC Private Network        │
+│           │ (10.0.x.x)                 │
+│  ┌────────┴─────────────────────────┐  │
+│  │     Level 2 (Private Only)       │  │
+│  │                                  │  │
+│  │  ┌──────────┐  ┌──────────┐    │  │
+│  │  │  MySQL   │  │  Redis   │    │  │
+│  │  │ Private  │  │ Private  │    │  │
+│  │  └──────────┘  └──────────┘    │  │
+│  │  ┌──────────┐                  │  │
+│  │  │AI Server │                  │  │
+│  │  │ Private  │                  │  │
+│  │  └──────────┘                  │  │
+│  └──────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+```
+
+### 📊 연결 흐름
+```
+MySQL Workbench
+    ↓
+[SSH 터널] 개발자 PC → Main Service (Public IP:22)
+    ↓
+[MySQL 연결] Main Service → MySQL (Private IP:3306)
+    ↓
+✅ DB 작업 가능
+```
+
+### 🔐 보안 계층 구조
+
+#### Level 1 (Public)
+- **Main Service**: 외부 접근 가능
+- 역할: SSH 게이트웨이 + 웹 서비스
+
+#### Level 2 (Private)
+- **MySQL, Redis, AI Server**: Private IP만
+- 외부 직접 접근 불가
+- Main Service 경유만 가능
+
+### 🎯 핵심 포인트
+```
+✅ DB는 외부 노출 안 됨 (Private IP만)
+✅ Main Service가 단일 진입점
+✅ 개발자 IP만 SSH 접근 가능
+✅ 2단계 보안 구조 유지
+```
+
+### 🛠️ MySQL Workbench 설정
+**SSH 터널 설정:**
+```
+SSH Hostname: Main Service Public IP
+SSH Username: ubuntu
+SSH Key: /path/to/key.pem
+MySQL Hostname: MySQL Private IP (10.0.x.x)
+```
+
+**Security Group:**
+```
+Main Service Inbound: 개발자IP → 22
+MySQL Inbound: VPC 내부(10.0.0.0/16) → 3306
+```
+
 ## 📚 문서 링크
 
 ### 인프라 가이드
@@ -519,22 +613,33 @@ ansible all -m command -a "docker network create app_mechuragi-network" -i inven
 
 ---
 
-## 🆕 최신 업데이트 (v2.1)
+## 🆕 최신 업데이트 (v2.2)
 
-### ✨ 새로운 기능 (v2.1)
+### ✨ 새로운 기능 (v2.2)
+- **📁 Ansible 구조 개편**: Setup/Test Playbook 분리
+- **✅ 독립적인 테스트**: test-db.yml, test-redis.yml, test-docker.yml
+- **🔧 Setup Playbook 단순화**: 설치/구성에만 집중
+- **📊 상세 검증 시스템**: 4단계 MySQL 검증, 6단계 Redis 검증
+- **🔐 SSH 터널링 가이드**: MySQL Workbench 설정 문서화
+
+### 🔧 주요 개선사항 (v2.2)
+- **Playbook 관심사 분리**: `playbooks/setup/`과 `playbooks/test/` 디렉토리 구조
+- **setup-nginx.yml 추가**: Nginx 설치를 독립 playbook으로 분리
+- **테스트 자동화**: 각 서비스 설치 후 독립적인 검증 가능
+- **클라이언트 자동 설치**: MySQL/Redis 클라이언트 자동 설치 및 검증
+- **에러 메시지 개선**: 더 깔끔한 테스트 출력 (failed_when/changed_when)
+
+### ✨ 이전 업데이트 (v2.1)
 - **🌐 CloudFront 커스텀 도메인**: `mechuragi.kro.kr` HTTPS 지원
 - **🔒 ACM SSL 인증서**: TLS 1.2 암호화 통신
 - **🔄 Nginx Reverse Proxy**: CloudFront → Nginx → Spring Boot 아키텍처
 - **📊 Ansible 검증 강화**: MySQL/Redis 설치 후 자동 검증
 - **🔑 IAM 권한 최적화**: EC2 메타데이터 조회 권한 추가
 - **📝 트러블슈팅 문서**: CloudFront 403, VPC 연결성 가이드
-
-### 🔧 주요 개선사항 (v2.1)
 - **CloudFront Origin**: EC2:8080 → Nginx:80 → Spring:8080 (프록시 구조)
 - **Nginx 역할 명확화**: `/api/*`만 처리, 프론트엔드는 S3/CloudFront
 - **MySQL 사용자 권한**: VPC 내부(10.0.%)만 접근 허용 (보안 강화)
 - **Redis bind 설정**: 0.0.0.0으로 VPC 내부 통신 지원
-- **Ansible Playbook**: 상세한 검증 결과 출력 (서비스 상태, 포트, 설정)
 
 ### 📦 이전 업데이트 (v2.0)
 - **🔄 Blue-Green 배포**: 메인 서비스 무중단 업데이트

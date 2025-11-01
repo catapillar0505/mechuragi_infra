@@ -1,0 +1,438 @@
+---
+- name: Redis 캐시 서버 연결성 진단 테스트
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - ../../group_vars/all/main.yml
+  tasks:
+    - name: 테스트 시작 메시지
+      debug:
+        msg: |
+          🔍 Redis 캐시 서버 연결성 진단 시작
+          ==========================================
+          테스트 단계:
+          1. 기본 네트워크 연결 (ICMP Ping)
+          2. TCP 포트 연결 테스트
+          3. Redis 서버 상세 설정 확인
+          4. Main 서비스에서 Redis 연결 테스트
+          5. AI 서비스에서 Redis 연결 테스트
+          6. 최종 요약 및 해결 방안
+
+# ===== 1단계: 기본 네트워크 연결 테스트 (ICMP) =====
+- name: "[1단계] Redis 서버 네트워크 연결 테스트"
+  hosts: main_service
+  gather_facts: no
+  vars_files:
+    - ../../group_vars/all/main.yml
+  tasks:
+    - name: 1단계 시작 메시지
+      debug:
+        msg: |
+
+          ==========================================
+          1단계: Redis 서버 네트워크 연결 테스트 (ICMP Ping)
+          ==========================================
+
+    - name: Redis 서버 Ping 테스트
+      shell: ping -c 2 -W 2 {{ hostvars[groups['cache'][0]]['private_ip'] }}
+      register: redis_ping
+      ignore_errors: yes
+
+    - name: "→ Redis Ping 결과"
+      debug:
+        msg: "{{ '✅ 연결 성공' if redis_ping.rc == 0 else '❌ 연결 실패' }}"
+
+    - name: 1단계 결과 출력
+      debug:
+        msg: |
+
+          📍 Ping 테스트 결과:
+          {% if redis_ping.rc == 0 %}
+          ✅ Redis ({{ hostvars[groups['cache'][0]]['private_ip'] }}): 연결 성공
+          {% else %}
+          ❌ Redis ({{ hostvars[groups['cache'][0]]['private_ip'] }}): 연결 실패 - Security Group ICMP 규칙 확인 필요
+          {% endif %}
+
+# ===== 2단계: TCP 포트 연결 테스트 =====
+- name: "[2단계] Redis TCP 포트 연결 테스트"
+  hosts: main_service
+  gather_facts: no
+  vars_files:
+    - ../../group_vars/all/main.yml
+  tasks:
+    - name: 2단계 시작 메시지
+      debug:
+        msg: |
+
+          ==========================================
+          2단계: Redis TCP 포트 연결 테스트
+          ==========================================
+
+    - name: Redis 포트 6379 연결 테스트 (bash)
+      shell: timeout 3 bash -c "</dev/tcp/{{ hostvars[groups['cache'][0]]['private_ip'] }}/6379" 2>&1
+      register: redis_port_bash
+      ignore_errors: yes
+
+    - name: "→ Redis 포트 결과"
+      debug:
+        msg: "{{ '✅ 포트 열림' if redis_port_bash.rc == 0 else '❌ 포트 닫힘: ' + (redis_port_bash.stderr | default('연결 실패')) }}"
+
+    - name: 2단계 결과 출력
+      debug:
+        msg: |
+
+          🔌 포트 연결 테스트 결과:
+          {% if redis_port_bash.rc == 0 %}
+          ✅ Redis:6379 - 포트 열림
+          {% else %}
+          ❌ Redis:6379 - 포트 닫힘 또는 연결 거부
+             원인: {{ redis_port_bash.stderr | default('연결 실패') }}
+             → Redis 서버가 0.0.0.0:6379에서 리스닝하지 않거나 Security Group 차단
+          {% endif %}
+
+# ===== 3단계: Redis 서버 설정 확인 =====
+- name: "[3단계] Redis 서버 설정 확인"
+  hosts: cache
+  gather_facts: no
+  vars_files:
+    - ../../group_vars/all/main.yml
+  tasks:
+    - name: 3단계 시작 메시지
+      debug:
+        msg: |
+
+          ==========================================
+          3단계: Redis 서버 설정 확인
+          ==========================================
+
+    - name: 현재 인스턴스의 Security Group ID 확인
+      shell: |
+        TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null)
+        INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+        aws ec2 describe-instances --instance-ids $INSTANCE_ID --region {{ aws_region }} --query 'Reservations[0].Instances[0].SecurityGroups[*].GroupId' --output text
+      register: redis_sg_ids
+      ignore_errors: yes
+      environment:
+        AWS_REGION: "{{ aws_region }}"
+
+    - name: "→ Redis Security Group ID"
+      debug:
+        msg: "{{ redis_sg_ids.stdout if redis_sg_ids.rc == 0 else '❌ 확인 불가' }}"
+
+    - name: Security Group 인바운드 규칙 확인 (6379 포트)
+      shell: |
+        aws ec2 describe-security-groups --group-ids {{ redis_sg_ids.stdout }} --region {{ aws_region }} --query 'SecurityGroups[*].IpPermissions[?ToPort==`6379`]' --output json
+      register: redis_sg_rules
+      ignore_errors: yes
+      when: redis_sg_ids.rc == 0
+      environment:
+        AWS_REGION: "{{ aws_region }}"
+
+    - name: "→ 6379 포트 인바운드 규칙"
+      debug:
+        msg: |
+          {% if redis_sg_rules.rc == 0 %}
+          {{ redis_sg_rules.stdout }}
+
+          ✅ Main Service IP: {{ hostvars[groups['main_service'][0]]['private_ip'] }} 허용 확인
+          ✅ AI Service IP: {{ hostvars[groups['ai_service'][0]]['private_ip'] }} 허용 확인
+
+          ⚠️  Security Group에서 VPC CIDR (10.0.0.0/16) 또는 위 IP들이 허용되어 있어야 합니다.
+          {% else %}
+          ❌ 규칙 확인 불가 (AWS CLI 권한 필요)
+          {% endif %}
+      when: redis_sg_ids.rc == 0
+
+    - name: Redis 서비스 상태 확인
+      shell: systemctl is-active redis-server
+      register: redis_status
+      ignore_errors: yes
+
+    - name: Redis 리스닝 주소 확인
+      shell: ss -tlnp | grep 6379 | awk '{print $4}'
+      register: redis_listen
+      ignore_errors: yes
+
+    - name: "→ 리스닝 주소 결과"
+      debug:
+        msg: "{{ redis_listen.stdout_lines if redis_listen.rc == 0 else '❌ 포트 6379 리스닝하지 않음' }}"
+
+    - name: Redis bind 설정 확인
+      shell: grep "^bind" /etc/redis/redis.conf 2>/dev/null || echo "not found"
+      register: redis_bind
+      ignore_errors: yes
+
+    - name: "→ bind 설정 결과"
+      debug:
+        msg: "{{ redis_bind.stdout_lines }}"
+
+    - name: Redis protected-mode 설정 확인
+      shell: grep "^protected-mode" /etc/redis/redis.conf 2>/dev/null || echo "not found"
+      register: redis_protected
+      ignore_errors: yes
+
+    - name: "→ protected-mode 설정 결과"
+      debug:
+        msg: "{{ redis_protected.stdout_lines }}"
+
+    - name: Redis 프로세스 확인
+      shell: ps aux | grep redis-server | grep -v grep
+      register: redis_process
+      ignore_errors: yes
+
+    - name: Redis 메모리 설정 확인
+      shell: redis-cli CONFIG GET maxmemory 2>/dev/null || echo "확인 불가"
+      register: redis_memory_config
+      ignore_errors: yes
+
+    - name: Redis 연결 테스트 (로컬)
+      command: redis-cli -h 127.0.0.1 -p {{ redis_port }} ping
+      register: redis_ping_local
+      ignore_errors: yes
+
+    - name: Redis 버전 확인
+      shell: redis-server --version
+      register: redis_version
+      ignore_errors: yes
+
+    - name: 3단계 결과 출력
+      debug:
+        msg: |
+
+          ⚡ Redis 서버 설정 상태:
+
+          1. 서비스 상태:
+             {% if redis_status.rc == 0 and redis_status.stdout == 'active' %}✅ 실행 중{% else %}❌ 중단됨 - sudo systemctl start redis-server{% endif %}
+
+          2. 프로세스 확인:
+             {{ '✅ redis-server 프로세스 실행 중' if redis_process.rc == 0 else '❌ redis-server 프로세스 없음' }}
+
+          3. 포트 리스닝 ({{ redis_port }}):
+             {{ redis_listen.stdout_lines | join(', ') if redis_listen.stdout_lines else '❌ 포트 리스닝하지 않음' }}
+             {% if redis_listen.stdout is search('0.0.0.0:6379') %}
+             ✅ 올바름: 모든 인터페이스에서 수신 (0.0.0.0:6379)
+             {% elif redis_listen.stdout is search('127.0.0.1:6379') %}
+             ❌ 문제: localhost에서만 수신 (127.0.0.1:6379)
+             해결: bind 0.0.0.0으로 변경 필요
+             {% endif %}
+
+          4. bind 설정:
+             {{ redis_bind.stdout if redis_bind.stdout else '❌ 설정 파일에서 찾을 수 없음' }}
+             {% if redis_bind.stdout is search('0.0.0.0') %}
+             ✅ 올바름: bind 0.0.0.0
+             {% elif redis_bind.stdout is search('127.0.0.1') %}
+             ❌ 문제: bind 127.0.0.1 (외부 접근 불가)
+             해결: /etc/redis/redis.conf에서 수정 필요
+             {% endif %}
+
+          5. protected-mode:
+             {{ redis_protected.stdout if redis_protected.stdout else '❌ 설정 파일에서 찾을 수 없음' }}
+             {% if 'yes' in redis_protected.stdout %}
+             ✅ 보호 모드 활성화 (protected-mode yes)
+             {% elif 'no' in redis_protected.stdout %}
+             ⚠️  보호 모드 비활성화 (보안 주의)
+             {% endif %}
+
+          6. 메모리 설정:
+             {{ redis_memory_config.stdout if redis_memory_config.rc == 0 else '확인 불가' }}
+
+          7. 연결 테스트 (로컬):
+             {{ '✅ Redis 연결 성공 (PONG)' if redis_ping_local.rc == 0 and 'PONG' in redis_ping_local.stdout else '❌ Redis 연결 실패' }}
+
+          8. Redis 버전:
+             {{ redis_version.stdout if redis_version.rc == 0 else '확인 불가' }}
+
+# ===== 4단계: Main 서비스에서 Redis 연결 테스트 =====
+- name: "[4단계] Main 서비스에서 Redis 연결 테스트"
+  hosts: main_service
+  become: yes
+  gather_facts: no
+  vars_files:
+    - ../../group_vars/all/main.yml
+  tasks:
+    - name: 4단계 시작 메시지
+      debug:
+        msg: |
+
+          ==========================================
+          4단계: Main 서비스에서 Redis 연결 테스트
+          ==========================================
+
+    - name: Redis 클라이언트 설치 확인
+      shell: which redis-cli
+      register: redis_client_check
+      failed_when: false
+      changed_when: false
+
+    - name: Redis 클라이언트 설치 (없는 경우)
+      apt:
+        name: redis-tools
+        state: present
+        update_cache: yes
+      when: redis_client_check.rc != 0
+
+    - name: Redis 포트 연결 테스트
+      wait_for:
+        host: "{{ hostvars[groups['cache'][0]]['private_ip'] }}"
+        port: "{{ redis_port }}"
+        timeout: 10
+      ignore_errors: yes
+      register: redis_port_connect
+
+    - name: "→ Redis 포트 연결"
+      debug:
+        msg: "{{ '✅ SUCCESS' if redis_port_connect is succeeded else '❌ FAILED' }}"
+
+    - name: Redis 애플리케이션 연결 테스트
+      shell: redis-cli -h {{ hostvars[groups['cache'][0]]['private_ip'] }} -p {{ redis_port }} ping 2>&1
+      register: redis_app_connect
+      ignore_errors: yes
+
+    - name: "→ Redis 애플리케이션 연결"
+      debug:
+        msg: "{{ '✅ SUCCESS (PONG)' if redis_app_connect.rc == 0 and 'PONG' in redis_app_connect.stdout else '❌ FAILED: ' + (redis_app_connect.stdout | default('')) }}"
+
+    - name: 4단계 결과 출력
+      debug:
+        msg: |
+
+          🧪 Main 서비스 → Redis 연결 테스트 결과:
+
+          1. Redis ({{ hostvars[groups['cache'][0]]['private_ip'] }}:{{ redis_port }})
+             - 포트 연결: {{ '✅ SUCCESS' if redis_port_connect is succeeded else '❌ FAILED - 타임아웃 또는 포트 닫힘' }}
+             - 애플리케이션 연결: {{ '✅ SUCCESS (PONG)' if redis_app_connect.rc == 0 and 'PONG' in redis_app_connect.stdout else '❌ FAILED' }}
+             {% if redis_app_connect.rc != 0 or 'PONG' not in redis_app_connect.stdout %}
+             에러: {{ redis_app_connect.stdout | default(redis_app_connect.stderr) }}
+
+             해결 방법:
+             - Redis 서버가 0.0.0.0:6379에서 리스닝하는지 확인
+             - Security Group에서 6379 포트 허용 확인
+             {% endif %}
+
+# ===== 5단계: AI 서비스에서 Redis 연결 테스트 =====
+- name: "[5단계] AI 서비스에서 Redis 연결 테스트"
+  hosts: ai_service
+  become: yes
+  gather_facts: no
+  vars_files:
+    - ../../group_vars/all/main.yml
+  tasks:
+    - name: 5단계 시작 메시지
+      debug:
+        msg: |
+
+          ==========================================
+          5단계: AI 서비스에서 Redis 연결 테스트
+          ==========================================
+
+    - name: Redis 클라이언트 설치 확인
+      shell: which redis-cli
+      register: redis_client_check
+      failed_when: false
+      changed_when: false
+
+    - name: Redis 클라이언트 설치 (없는 경우)
+      apt:
+        name: redis-tools
+        state: present
+        update_cache: yes
+      when: redis_client_check.rc != 0
+
+    - name: Redis 포트 연결 테스트
+      wait_for:
+        host: "{{ hostvars[groups['cache'][0]]['private_ip'] }}"
+        port: "{{ redis_port }}"
+        timeout: 10
+      ignore_errors: yes
+      register: ai_redis_port_connect
+
+    - name: "→ Redis 포트 연결"
+      debug:
+        msg: "{{ '✅ SUCCESS' if ai_redis_port_connect is succeeded else '❌ FAILED' }}"
+
+    - name: Redis 애플리케이션 연결 테스트
+      shell: redis-cli -h {{ hostvars[groups['cache'][0]]['private_ip'] }} -p {{ redis_port }} ping 2>&1
+      register: ai_redis_app_connect
+      ignore_errors: yes
+
+    - name: "→ Redis 애플리케이션 연결"
+      debug:
+        msg: "{{ '✅ SUCCESS (PONG)' if ai_redis_app_connect.rc == 0 and 'PONG' in ai_redis_app_connect.stdout else '❌ FAILED: ' + (ai_redis_app_connect.stdout | default('')) }}"
+
+    - name: 5단계 결과 출력
+      debug:
+        msg: |
+
+          🤖 AI 서비스 → Redis 연결 테스트 결과:
+
+          1. Redis ({{ hostvars[groups['cache'][0]]['private_ip'] }}:{{ redis_port }})
+             - 포트 연결: {{ '✅ SUCCESS' if ai_redis_port_connect is succeeded else '❌ FAILED - 타임아웃 또는 포트 닫힘' }}
+             - 애플리케이션 연결: {{ '✅ SUCCESS (PONG)' if ai_redis_app_connect.rc == 0 and 'PONG' in ai_redis_app_connect.stdout else '❌ FAILED' }}
+             {% if ai_redis_app_connect.rc != 0 or 'PONG' not in ai_redis_app_connect.stdout %}
+             에러: {{ ai_redis_app_connect.stdout | default(ai_redis_app_connect.stderr) }}
+
+             해결 방법:
+             - Redis 서버가 0.0.0.0:6379에서 리스닝하는지 확인
+             - Security Group에서 6379 포트 허용 확인
+             {% endif %}
+
+# ===== 6단계: 최종 요약 및 종합 결과 =====
+- name: "[6단계] Redis 연결성 최종 요약"
+  hosts: cache
+  gather_facts: no
+  vars_files:
+    - ../../group_vars/all/main.yml
+  tasks:
+    - name: 최종 요약 메시지
+      debug:
+        msg: |
+
+          ==========================================
+          ✅ Redis 캐시 서버 연결성 진단 완료
+          ==========================================
+
+          📍 Redis 서버: {{ inventory_hostname }} ({{ hostvars[groups['cache'][0]]['private_ip'] }})
+
+          📋 테스트 단계별 체크리스트:
+          - [1단계] ✅ 기본 네트워크 연결 (ICMP Ping)
+          - [2단계] ✅ TCP 포트 연결 테스트
+          - [3단계] ✅ Redis 서버 상세 설정 확인
+          - [4단계] ✅ Main 서비스에서 Redis 연결 테스트
+          - [5단계] ✅ AI 서비스에서 Redis 연결 테스트
+          - [6단계] ✅ 최종 요약 및 해결 방안
+
+          🌐 Redis 연결성 최종 상태:
+
+          1. Main Service → Redis ({{ hostvars[groups['cache'][0]]['private_ip'] }}:{{ redis_port }})
+             {% set main_result = hostvars[groups['main_service'][0]] %}
+             {{ '✅ 정상' if main_result.redis_port_connect is succeeded and main_result.redis_app_connect.rc == 0 and 'PONG' in main_result.redis_app_connect.stdout else '❌ 실패' }}
+
+          2. AI Service → Redis ({{ hostvars[groups['cache'][0]]['private_ip'] }}:{{ redis_port }})
+             {% set ai_result = hostvars[groups['ai_service'][0]] %}
+             {{ '✅ 정상' if ai_result.ai_redis_port_connect is succeeded and ai_result.ai_redis_app_connect.rc == 0 and 'PONG' in ai_result.ai_redis_app_connect.stdout else '❌ 실패' }}
+
+          {% set main_ok = hostvars[groups['main_service'][0]].redis_port_connect is succeeded and hostvars[groups['main_service'][0]].redis_app_connect.rc == 0 and 'PONG' in hostvars[groups['main_service'][0]].redis_app_connect.stdout %}
+          {% set ai_ok = hostvars[groups['ai_service'][0]].ai_redis_port_connect is succeeded and hostvars[groups['ai_service'][0]].ai_redis_app_connect.rc == 0 and 'PONG' in hostvars[groups['ai_service'][0]].ai_redis_app_connect.stdout %}
+          {% if main_ok and ai_ok %}
+          ==========================================
+          🎉 모든 서비스의 Redis 연결 정상!
+          ==========================================
+          VPC 내부에서 Redis 캐시 서버 통신이 정상적으로 작동하고 있습니다.
+          {% else %}
+          ==========================================
+          ⚠️  일부 서비스의 Redis 연결 실패
+          ==========================================
+          {% endif %}
+
+          🔍 문제 해결 방법:
+
+          1. Redis 연결 실패 시:
+             - Redis 서비스 상태: sudo systemctl status redis-server
+             - bind 0.0.0.0 확인: grep "^bind" /etc/redis/redis.conf
+             - protected-mode no 확인: grep "^protected-mode" /etc/redis/redis.conf
+             - Security Group 6379 포트 허용 확인 (AWS 콘솔)
+             - 재배포: ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-cache.yml
+
+          📚 추가 참고 자료:
+          - VPC 내부 통신 문서: docs/vpc-internal-connectivity.md
+          - Redis 서버 상세 진단: ansible-playbook -i inventory/hosts.yml playbooks/test/test-connectivity.yml
