@@ -458,13 +458,13 @@ ansible main_service -m command -a "tail -n 50 /var/log/nginx/main_service_acces
 # GitHub Actions에서 수동 트리거로 알림 테스트
 
 # CloudFront 캐시 무효화
-aws cloudfront create-invalidation --distribution-id E2055JLBFIVGCA --paths "/*"
+aws cloudfront create-invalidation --distribution-id YOUR_DISTRIBUTION_ID --paths "/*"
 
 # CloudFront 배포 상태 확인
-aws cloudfront get-distribution --id E2055JLBFIVGCA --query 'Distribution.Status'
+aws cloudfront get-distribution --id YOUR_DISTRIBUTION_ID --query 'Distribution.Status'
 
 # CloudFront 커스텀 도메인 설정 확인
-aws cloudfront get-distribution --id E2055JLBFIVGCA --query 'Distribution.DistributionConfig.Aliases'
+aws cloudfront get-distribution --id YOUR_DISTRIBUTION_ID --query 'Distribution.DistributionConfig.Aliases'
 
 # Docker 네트워크 문제 해결
 ansible all -m command -a "docker network ls" -i inventory/hosts.yml
