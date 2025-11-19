@@ -117,6 +117,28 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     max_ttl     = 0
   }
 
+  # OAuth2 로그인 콜백 경로 (EC2 서버로 프록시)
+  ordered_cache_behavior {
+    path_pattern           = "/login/*"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "api-origin"
+    compress               = false
+    viewer_protocol_policy = "redirect-to-https"
+
+    forwarded_values {
+      query_string = true  # OAuth code, state 파라미터 전달
+      headers      = ["Authorization", "Content-Type", "Accept"]
+      cookies {
+        forward = "all"  # 세션 쿠키 전달 필수
+      }
+    }
+
+    min_ttl     = 0  # 로그인은 캐싱 비활성화
+    default_ttl = 0
+    max_ttl     = 0
+  }
+
   # SPA를 위한 커스텀 오류 응답 (403, 404 발생 시 index.html로 리디렉션)
   custom_error_response {
     error_code         = 403
