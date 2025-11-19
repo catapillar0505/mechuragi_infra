@@ -15,8 +15,8 @@ output "main_service_private_ip" {
 }
 
 output "main_service_public_dns" {
-  description = "Public DNS name of the main service instance"
-  value       = aws_instance.main_service.public_dns
+  description = "Public DNS name of the main service Elastic IP"
+  value       = aws_eip.main_service.public_dns
 }
 
 # AI 추천 서비스 인스턴스 정보
