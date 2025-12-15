@@ -1,0 +1,87 @@
+---
+- name: Common setup for all servers
+  hosts: all
+  become: yes
+  tasks:
+    - name: Wait for any apt processes to complete
+      shell: |
+        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 ; do
+          echo "Waiting for other apt process to finish..."
+          sleep 5
+        done
+      changed_when: false
+      become: yes
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      retries: 5
+      delay: 10
+      register: apt_update
+      until: apt_update is success
+
+    - name: Install common packages
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - vim
+          - htop
+          - net-tools
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - unzip
+          - jq
+        state: present
+      retries: 5
+      delay: 10
+      register: apt_install
+      until: apt_install is success
+
+    - name: Set timezone to Asia/Seoul
+      timezone:
+        name: "{{ timezone }}"
+
+    - name: Configure system locale
+      locale_gen:
+        name: en_US.UTF-8
+        state: present
+
+    - name: Set default locale
+      command: update-locale LANG=en_US.UTF-8
+      changed_when: false
+
+    - name: Create application directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0755'
+      loop:
+        - "{{ app_directory }}"
+        - "{{ config_directory }}"
+        - "{{ log_directory }}"
+        - "{{ docker_compose_directory }}"
+
+    - name: Install AWS CLI v2
+      shell: |
+        cd /tmp
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip -o awscliv2.zip
+        ./aws/install --update
+        rm -rf aws awscliv2.zip
+      args:
+        creates: /usr/local/bin/aws
+
+    - name: Verify AWS CLI installation
+      command: aws --version
+      register: aws_version
+      changed_when: false
+
+    - name: Display AWS CLI version
+      debug:
+        msg: "{{ aws_version.stdout }}"

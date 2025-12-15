@@ -1,0 +1,51 @@
+---
+- name: Setup Nginx Gateway (Nginx + Docker only)
+  hosts: nginx_gateway
+  become: yes
+  tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
+    - name: Start and enable Nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+
+    - name: Configure IP forwarding for NAT
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        state: present
+        reload: yes
+
+    - name: Install iptables-persistent
+      apt:
+        name: iptables-persistent
+        state: present
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Configure iptables for NAT (MASQUERADE)
+      iptables:
+        table: nat
+        chain: POSTROUTING
+        out_interface: ens5
+        jump: MASQUERADE
+      notify: Save iptables
+
+    - name: Verify Nginx installation
+      command: nginx -v
+      register: nginx_version
+      changed_when: false
+
+    - name: Display Nginx version
+      debug:
+        msg: "{{ nginx_version.stderr }}"
+
+  handlers:
+    - name: Save iptables
+      shell: iptables-save > /etc/iptables/rules.v4

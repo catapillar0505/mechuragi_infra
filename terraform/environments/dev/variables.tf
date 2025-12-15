@@ -28,17 +28,43 @@ variable "key_pair_name" {
   type        = string
 }
 
+# EC2 Instance Types
+variable "main_service_instance_type" {
+  description = "Instance type for integrated main service (MySQL + Redis + API)"
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "ai_service_instance_type" {
+  description = "Instance type for AI service"
+  type        = string
+  default     = "t3.small"
+}
+
+variable "nginx_gateway_instance_type" {
+  description = "Instance type for Nginx gateway (reverse proxy, bastion, NAT)"
+  type        = string
+  default     = "t3.micro"
+}
+
+# SSH Access Control
+variable "admin_ssh_cidrs" {
+  description = "List of CIDR blocks allowed to SSH into Nginx bastion (developer IPs)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]  # 기본값: 전체 허용 (프로덕션에서는 반드시 변경!)
+}
+
 # SES Variables
 variable "ses_domain" {
   description = "Domain for SES (optional)"
   type        = string
-  default     = "mechuragi.kro.kr"
+  default     = ""
 }
 
 variable "ses_from_email" {
   description = "From email address for SES"
   type        = string
-  default     = "mechuragi001@gmail.com"
+  default     = ""
 }
 
 # Bedrock Variables (프리티어 설정)
@@ -62,9 +88,9 @@ variable "bedrock_embedding_model" {
 
 # Custom Domain and ACM Certificate Variables
 variable "domain_name" {
-  description = "Custom domain name (e.g., mechuragi.kro.kr)"
+  description = "Custom domain name (e.g., yourdomain.com)"
   type        = string
-  default     = "mechuragi.kro.kr"
+  default     = ""
 }
 
 variable "subject_alternative_names" {

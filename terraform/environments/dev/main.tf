@@ -46,11 +46,12 @@ module "vpc" {
 # 보안 그룹 모듈 호출
 module "security" {
   source = "../../modules/security"
-  
-  project_name = var.project_name
-  environment  = var.environment
-  vpc_id       = module.vpc.vpc_id
-  vpc_cidr     = var.vpc_cidr
+
+  project_name     = var.project_name
+  environment      = var.environment
+  vpc_id           = module.vpc.vpc_id
+  vpc_cidr         = var.vpc_cidr
+  admin_ssh_cidrs  = var.admin_ssh_cidrs
 }
 
 # Bedrock 모듈 호출 (AI 서비스에서 사용)
@@ -70,16 +71,16 @@ module "compute" {
 
   project_name                   = var.project_name
   environment                    = var.environment
-  main_service_instance_type     = "t3.micro"
-  ai_service_instance_type       = "t3.small"
-  mysql_instance_type            = "t3.micro"
-  redis_instance_type            = "t3.micro"
+  main_service_instance_type     = var.main_service_instance_type
+  ai_service_instance_type       = var.ai_service_instance_type
+  nginx_gateway_instance_type    = var.nginx_gateway_instance_type
   key_pair_name                  = var.key_pair_name
   main_service_sg_id             = module.security.main_service_sg_id
   ai_service_sg_id               = module.security.ai_service_sg_id
-  mysql_sg_id                    = module.security.mysql_sg_id
-  redis_sg_id                    = module.security.redis_sg_id
+  nginx_gateway_sg_id            = module.security.nginx_gateway_sg_id
   public_subnet_id               = module.vpc.public_subnet_id
+  private_subnet_id              = module.vpc.private_subnet_id
+  private_route_table_id         = module.vpc.private_route_table_id
   bedrock_instance_profile_name  = module.bedrock.bedrock_instance_profile_name
   ses_instance_profile_name      = module.ses.ses_instance_profile_name
 }
@@ -119,7 +120,7 @@ module "cloudfront" {
   s3_images_bucket_name             = module.s3.s3_images_bucket_name
   s3_images_bucket_domain_name      = module.s3.s3_images_bucket_domain_name
   s3_images_bucket_arn              = module.s3.s3_images_bucket_arn
-  main_service_public_dns           = module.compute.main_service_public_dns
+  nginx_gateway_public_dns          = module.compute.nginx_gateway_public_dns
   domain_name                       = var.domain_name
   acm_certificate_arn               = module.acm_certificate.certificate_arn
   use_custom_domain                 = var.use_custom_domain

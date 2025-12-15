@@ -32,15 +32,15 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     origin_access_control_id = aws_cloudfront_origin_access_control.images_oac.id
   }
 
-  # Spring Boot API 서버 오리진 (Nginx → Spring Boot)
+  # Nginx 게이트웨이 오리진 (API 및 AI 요청 프록시)
   origin {
-    domain_name = var.main_service_public_dns
-    origin_id   = "api-origin"
+    domain_name = var.nginx_gateway_public_dns
+    origin_id   = "nginx-gateway-origin"
 
     custom_origin_config {
-      http_port              = 80   # Nginx는 80번 포트에서 리스닝
+      http_port              = 80
       https_port             = 443
-      origin_protocol_policy = "http-only"  # EC2는 HTTP로 접근
+      origin_protocol_policy = "http-only"  # Nginx는 HTTP로 접근
       origin_ssl_protocols   = ["TLSv1.2"]
     }
   }
@@ -95,24 +95,46 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     max_ttl     = 31536000  # 1년
   }
 
-  # Spring Boot API 캐시 동작 (EC2 서버로 프록시)
+  # API 캐시 동작 (Nginx → 메인 서버)
   ordered_cache_behavior {
     path_pattern           = "/api/*"
     allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "api-origin"
-    compress               = false  # API 응답은 압축 비활성화 게 나음
+    target_origin_id       = "nginx-gateway-origin"
+    compress               = false
     viewer_protocol_policy = "redirect-to-https"
 
     forwarded_values {
-      query_string = true  # API 쿼리 파라미터 전달
-      headers      = ["Authorization", "Content-Type", "Accept"]  # 필수 헤더만 전달
+      query_string = true
+      headers      = ["Authorization", "Content-Type", "Accept"]
       cookies {
-        forward = "all"  # 세션 및 인증 쿠키 전달
+        forward = "all"
       }
     }
 
-    min_ttl     = 0  # API는 캐싱 비활성화
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 0
+  }
+
+  # AI 추천 API 캐시 동작 (Nginx → AI 서버)
+  ordered_cache_behavior {
+    path_pattern           = "/recommend/*"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "nginx-gateway-origin"
+    compress               = false
+    viewer_protocol_policy = "redirect-to-https"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Authorization", "Content-Type", "Accept"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    min_ttl     = 0  # AI 응답은 개인화되므로 캐싱 비활성화
     default_ttl = 0
     max_ttl     = 0
   }

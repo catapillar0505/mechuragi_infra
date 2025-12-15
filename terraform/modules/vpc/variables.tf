@@ -14,7 +14,13 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidr" {
-  description = "CIDR block for public subnet"
+  description = "CIDR block for public subnet (Nginx Gateway only)"
   type        = string
   default     = "10.0.1.0/24"
+}
+
+variable "private_subnet_cidr" {
+  description = "CIDR block for private subnet (Main & AI services)"
+  type        = string
+  default     = "10.0.2.0/24"
 }

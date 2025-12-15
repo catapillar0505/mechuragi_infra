@@ -1,0 +1,40 @@
+---
+# 전체 인프라 초기 설정
+# 사용법: ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+
+- name: Setup all servers
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Display server information
+      debug:
+        msg: "Setting up {{ inventory_hostname }} ({{ server_type }})"
+
+# 1. 모든 서버에 공통 패키지 설치
+- import_playbook: common.yml
+
+# 2. 모든 서버에 Docker 설치
+- import_playbook: docker.yml
+
+# 3. Nginx Gateway 서버 설정 (Nginx + NAT)
+- import_playbook: nginx-gateway.yml
+
+- name: Setup complete
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Display completion message
+      debug:
+        msg: |
+          ========================================
+          인프라 초기 설정 완료!
+
+          설치된 항목:
+          - 모든 서버: 기본 패키지, AWS CLI, Docker
+          - Nginx Gateway: Nginx, NAT 설정
+
+          다음 단계:
+          1. Nginx 리버스 프록시 설정 (수동)
+          2. Main Service: docker-compose.yml 작성 및 배포 (수동)
+          3. AI Service: docker-compose.yml 작성 및 배포 (수동)
+          ========================================

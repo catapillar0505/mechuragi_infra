@@ -1,50 +1,44 @@
-# 메인 서비스 EC2 정보
-output "main_service_public_ip" {
-  description = "Public IP of the main service EC2 instance"
-  value       = module.compute.main_service_public_ip
+# Nginx 게이트웨이 EC2 정보 (유일한 Public 인스턴스)
+output "nginx_gateway_public_ip" {
+  description = "Public IP of the Nginx gateway instance (Bastion Host)"
+  value       = module.compute.nginx_gateway_public_ip
 }
 
+output "nginx_gateway_public_dns" {
+  description = "Public DNS of the Nginx gateway instance"
+  value       = module.compute.nginx_gateway_public_dns
+}
+
+output "nginx_gateway_private_ip" {
+  description = "Private IP of the Nginx gateway instance"
+  value       = module.compute.nginx_gateway_private_ip
+}
+
+output "nginx_ssh_command" {
+  description = "SSH command to connect to Nginx gateway (Bastion Host)"
+  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem ubuntu@${module.compute.nginx_gateway_public_ip}"
+}
+
+# 통합 메인 서비스 EC2 정보 (Private Subnet)
 output "main_service_private_ip" {
-  description = "Private IP of the main service EC2 instance"
+  description = "Private IP of the integrated main service (MySQL + Redis + API)"
   value       = module.compute.main_service_private_ip
 }
 
 output "main_service_ssh_command" {
-  description = "SSH command to connect to the main service instance"
-  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem ubuntu@${module.compute.main_service_public_ip}"
+  description = "SSH command to connect to main service via Nginx bastion"
+  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem -J ubuntu@${module.compute.nginx_gateway_public_ip} ubuntu@${module.compute.main_service_private_ip}"
 }
 
-# AI 추천 서비스 EC2 정보
-output "ai_service_public_ip" {
-  description = "Public IP of the AI service EC2 instance"
-  value       = module.compute.ai_service_public_ip
-}
-
+# AI 추천 서비스 EC2 정보 (Private Subnet)
 output "ai_service_private_ip" {
-  description = "Private IP of the AI service EC2 instance"
+  description = "Private IP of the AI service instance"
   value       = module.compute.ai_service_private_ip
 }
 
-# MySQL EC2 정보
-output "mysql_public_ip" {
-  description = "Public IP of the MySQL EC2 instance"
-  value       = module.compute.mysql_public_ip
-}
-
-output "mysql_private_ip" {
-  description = "Private IP of the MySQL EC2 instance"
-  value       = module.compute.mysql_private_ip
-}
-
-# Redis EC2 정보
-output "redis_public_ip" {
-  description = "Public IP of the Redis EC2 instance"
-  value       = module.compute.redis_public_ip
-}
-
-output "redis_private_ip" {
-  description = "Private IP of the Redis EC2 instance"
-  value       = module.compute.redis_private_ip
+output "ai_service_ssh_command" {
+  description = "SSH command to connect to AI service via Nginx bastion"
+  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem -J ubuntu@${module.compute.nginx_gateway_public_ip} ubuntu@${module.compute.ai_service_private_ip}"
 }
 
 output "s3_bucket_name" {
@@ -129,9 +123,4 @@ output "acm_certificate_status" {
 output "acm_domain_validation_options" {
   description = "kro.kr DNS 관리 페이지에 추가해야 할 CNAME 레코드"
   value       = module.acm_certificate.domain_validation_options
-}
-
-output "main_service_public_dns" {
-  description = "Public DNS name of the main service instance"
-  value       = module.compute.main_service_public_dns
 }

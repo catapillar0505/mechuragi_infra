@@ -70,23 +70,23 @@ resource "aws_iam_instance_profile" "ec2_describe_profile" {
   role = aws_iam_role.ec2_describe_role.name
 }
 
-# 메인 서비스용 ENI (사설 IP 고정)
+# 통합 메인 서비스용 ENI (Private Subnet, 사설 IP만)
 resource "aws_network_interface" "main_service_eni" {
-  subnet_id       = var.public_subnet_id
-  private_ips     = ["10.0.1.76"]  # 현재 IP 고정
+  subnet_id       = var.private_subnet_id
+  private_ips     = ["10.0.2.10"]  # Private Subnet CIDR 사용
   security_groups = [var.main_service_sg_id]
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-main-service-eni"
+    Name = "${var.project_name}-${var.environment}-main-integrated-eni"
   }
 }
 
-# 메인 서비스용 EC2 인스턴스 (Docker)
+# 통합 메인 서비스용 EC2 인스턴스 (MySQL + Redis + API)
 resource "aws_instance" "main_service" {
   ami                  = data.aws_ami.ubuntu.id
   instance_type        = var.main_service_instance_type
   key_name             = var.key_pair_name
-  iam_instance_profile = var.ses_instance_profile_name  # SES 권한 필요
+  iam_instance_profile = var.ses_instance_profile_name  # SES 권한 유지
 
   network_interface {
     network_interface_id = aws_network_interface.main_service_eni.id
@@ -95,20 +95,20 @@ resource "aws_instance" "main_service" {
 
   root_block_device {
     volume_type = "gp3"
-    volume_size = 20
+    volume_size = 30  # MySQL 데이터 포함하므로 용량 증가
     encrypted   = true
   }
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-main-service"
-    Type = "main-service"
+    Name = "${var.project_name}-${var.environment}-main-integrated"
+    Type = "main-integrated"
   }
 }
 
-# AI 서비스용 ENI (사설 IP 고정)
+# AI 서비스용 ENI (Private Subnet, 사설 IP만)
 resource "aws_network_interface" "ai_service_eni" {
-  subnet_id       = var.public_subnet_id
-  private_ips     = ["10.0.1.184"]  # 현재 IP 고정
+  subnet_id       = var.private_subnet_id
+  private_ips     = ["10.0.2.20"]  # Private Subnet CIDR 사용
   security_groups = [var.ai_service_sg_id]
 
   tags = {
@@ -116,24 +116,12 @@ resource "aws_network_interface" "ai_service_eni" {
   }
 }
 
-# AI 서비스용 Elastic IP (퍼블릭 액세스용)
-resource "aws_eip" "ai_service" {
-  network_interface = aws_network_interface.ai_service_eni.id
-  domain            = "vpc"
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-ai-service-eip"
-  }
-
-  depends_on = [aws_instance.ai_service]
-}
-
 # AI 추천 서비스용 EC2 인스턴스 (Docker)
 resource "aws_instance" "ai_service" {
   ami                  = data.aws_ami.ubuntu.id
   instance_type        = var.ai_service_instance_type
   key_name             = var.key_pair_name
-  iam_instance_profile = var.bedrock_instance_profile_name  # Bedrock 권한 필요
+  iam_instance_profile = var.bedrock_instance_profile_name  # Bedrock 권한 유지
 
   network_interface {
     network_interface_id = aws_network_interface.ai_service_eni.id
@@ -152,85 +140,38 @@ resource "aws_instance" "ai_service" {
   }
 }
 
-# MySQL 서비스용 ENI (사설 IP 고정)
-resource "aws_network_interface" "mysql_eni" {
+# Nginx 게이트웨이용 ENI (Public Subnet)
+resource "aws_network_interface" "nginx_gateway_eni" {
   subnet_id       = var.public_subnet_id
-  private_ips     = ["10.0.1.214"]  # 현재 IP 고정
-  security_groups = [var.mysql_sg_id]
+  private_ips     = ["10.0.1.100"]  # Public Subnet CIDR 사용
+  security_groups = [var.nginx_gateway_sg_id]
+  source_dest_check = false  # NAT 동작을 위해 비활성화
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-mysql-eni"
+    Name = "${var.project_name}-${var.environment}-nginx-gateway-eni"
   }
 }
 
-# MySQL용 Elastic IP (퍼블릭 액세스용)
-resource "aws_eip" "mysql" {
-  network_interface = aws_network_interface.mysql_eni.id
+# Nginx 게이트웨이용 Elastic IP
+resource "aws_eip" "nginx_gateway" {
+  network_interface = aws_network_interface.nginx_gateway_eni.id
   domain            = "vpc"
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-mysql-eip"
+    Name = "${var.project_name}-${var.environment}-nginx-gateway-eip"
   }
 
-  depends_on = [aws_instance.mysql]
+  depends_on = [aws_instance.nginx_gateway]
 }
 
-# MySQL 데이터베이스용 EC2 인스턴스 (네이티브)
-resource "aws_instance" "mysql" {
-  ami                  = data.aws_ami.ubuntu.id
-  instance_type        = var.mysql_instance_type
-  key_name             = var.key_pair_name
-  iam_instance_profile = aws_iam_instance_profile.ec2_describe_profile.name
+# Nginx 게이트웨이 EC2 인스턴스 (리버스 프록시, Bastion, NAT)
+resource "aws_instance" "nginx_gateway" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = var.nginx_gateway_instance_type
+  key_name      = var.key_pair_name
 
   network_interface {
-    network_interface_id = aws_network_interface.mysql_eni.id
-    device_index         = 0
-  }
-
-  root_block_device {
-    volume_type = "gp3"
-    volume_size = var.mysql_volume_size
-    encrypted   = true
-  }
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-mysql"
-    Type = "mysql"
-  }
-}
-
-# Redis 서비스용 ENI (사설 IP 고정)
-resource "aws_network_interface" "redis_eni" {
-  subnet_id       = var.public_subnet_id
-  private_ips     = ["10.0.1.185"]  # 현재 IP 고정
-  security_groups = [var.redis_sg_id]
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-redis-eni"
-  }
-}
-
-# Redis용 Elastic IP (퍼블릭 액세스용)
-resource "aws_eip" "redis" {
-  network_interface = aws_network_interface.redis_eni.id
-  domain            = "vpc"
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-redis-eip"
-  }
-
-  depends_on = [aws_instance.redis]
-}
-
-# Redis 캐시 서버용 EC2 인스턴스 (네이티브)
-resource "aws_instance" "redis" {
-  ami                  = data.aws_ami.ubuntu.id
-  instance_type        = var.redis_instance_type
-  key_name             = var.key_pair_name
-  iam_instance_profile = aws_iam_instance_profile.ec2_describe_profile.name
-
-  network_interface {
-    network_interface_id = aws_network_interface.redis_eni.id
+    network_interface_id = aws_network_interface.nginx_gateway_eni.id
     device_index         = 0
   }
 
@@ -240,21 +181,34 @@ resource "aws_instance" "redis" {
     encrypted   = true
   }
 
+  user_data = <<-EOF
+              #!/bin/bash
+              # IP forwarding 활성화 (NAT 기능)
+              echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+              sysctl -p
+
+              # iptables MASQUERADE 규칙 (NAT)
+              iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE
+
+              # 재부팅 후에도 유지
+              apt-get update
+              apt-get install -y iptables-persistent
+              netfilter-persistent save
+              EOF
+
   tags = {
-    Name = "${var.project_name}-${var.environment}-redis"
-    Type = "redis"
+    Name = "${var.project_name}-${var.environment}-nginx-gateway"
+    Type = "nginx-gateway"
   }
 }
 
-# 메인 서비스용 Elastic IP (ENI에 연결)
-resource "aws_eip" "main_service" {
-  network_interface = aws_network_interface.main_service_eni.id
-  domain            = "vpc"
+# Private Subnet의 NAT 라우트 추가
+resource "aws_route" "private_nat" {
+  route_table_id         = var.private_route_table_id
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = aws_network_interface.nginx_gateway_eni.id
 
-  tags = {
-    Name = "${var.project_name}-${var.environment}-main-service-eip"
-  }
-
-  depends_on = [aws_instance.main_service]
+  depends_on = [aws_instance.nginx_gateway]
 }
+
 

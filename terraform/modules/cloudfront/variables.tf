@@ -65,8 +65,8 @@ variable "web_domain" {
   default     = "mechuragi.kro.kr"
 }
 
-variable "main_service_public_dns" {
-  description = "Public DNS name of the main service EC2 instance (e.g., ec2-X-X-X-X.ap-northeast-2.compute.amazonaws.com)"
+variable "nginx_gateway_public_dns" {
+  description = "Public DNS name of the Nginx gateway EC2 instance (e.g., ec2-X-X-X-X.ap-northeast-2.compute.amazonaws.com)"
   type        = string
 }
 
