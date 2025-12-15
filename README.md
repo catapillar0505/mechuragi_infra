@@ -1,10 +1,10 @@
 # Mechuragi Infrastructure
 
-메추라기 프로젝트의 **분산 마이크로서비스 아키텍처**를 구현하는 AWS 인프라 저장소입니다. Terraform과 Ansible을 사용하여 React 프론트엔드와 Spring Boot 백엔드의 최적화된 배포 환경을 제공합니다.
+메추라기 프로젝트의 **통합 마이크로서비스 아키텍처**를 구현하는 AWS 인프라 저장소입니다. Terraform과 Ansible을 사용하여 React 프론트엔드와 Spring Boot 백엔드의 최적화된 배포 환경을 제공합니다.
 
 ## 🏗️ 아키텍처 개요
 
-### 분산 서비스 구조 (4개 인스턴스 + React CDN + CI/CD)
+### 통합 서비스 구조 (3개 인스턴스 + React CDN + CI/CD)
 ```
                     ┌──────────────────────────────┐
                     │  사용자 (Browser/Mobile)      │
@@ -16,37 +16,35 @@
                     │   - SSL: ACM Certificate     │
                     └──┬─────────┬─────────┬───────┘
                        │         │         │
-            ┌──────────▼──┐  ┌──▼─────┐  ┌▼───────────┐
-            │  S3 (React) │  │S3 (Img)│  │EC2 (Nginx) │
-            │  정적 파일   │  │이미지   │  │  :80       │
-            └─────────────┘  └────────┘  └─┬──────────┘
-                                            │ reverse proxy
-                    ┌───────────────────────▼─────────┐
-                    │  메인 서비스 (Spring Boot)      │
-                    │  :8080 + SES                    │
-                    │  Blue-Green 배포                │
-                    └──────────────┬──────────────────┘
-                                   │ VPC 내부 통신
-                    ┌──────────────▼──────────────────┐
-                    │  AI 추천 서비스 (Spring Boot)   │
-                    │  :8082 + Bedrock                │
-                    │  Docker 배포                    │
-                    └──────────────┬──────────────────┘
-                                   │
-            ┌──────────────────────┼──────────────────────┐
-            │                      │                      │
-    ┌───────▼──────┐      ┌───────▼──────┐      ┌───────▼──────┐
-    │  MySQL DB    │      │ Redis Cache  │      │ GitHub CI/CD │
-    │  :3306       │      │ :6379        │      │ + Discord    │
-    │  VPC 내부만  │      │ VPC 내부만   │      │ 알림         │
-    └──────────────┘      └──────────────┘      └──────────────┘
+            ┌──────────▼──┐  ┌──▼─────┐  ┌▼────────────────┐
+            │  S3 (React) │  │S3 (Img)│  │ Nginx Gateway   │
+            │  정적 파일   │  │이미지   │  │ Public Subnet   │
+            └─────────────┘  └────────┘  │ :80, :443       │
+                                          │ Reverse Proxy   │
+                                          │ + Bastion + NAT │
+                                          └─┬──────────┬────┘
+                                            │          │
+                         ┌──────────────────┘          └──────────────────┐
+                         │ Private Subnet (VPC 내부)                      │
+              ┌──────────▼──────────┐                  ┌─────────▼────────┐
+              │  통합 메인 서버      │                  │  AI 추천 서버    │
+              │  t3.medium          │◄─────MySQL───────│  t3.small        │
+              │  ┌────────────────┐ │                  │  :8082           │
+              │  │ MySQL :3306    │ │                  │  + Bedrock       │
+              │  │ Redis :6379    │ │                  │  AI Gateway      │
+              │  │ API   :8080    │ │                  └──────────────────┘
+              │  └────────────────┘ │
+              │  Docker Compose     │
+              └─────────────────────┘
 ```
 
 ### 네트워크 보안 설계
-- **Public Subnet** (10.0.2.0/24): 모든 서비스 배치 (비용 최적화)
-- **보안 그룹 4계층**: 서비스별 차별화된 접근 제어
-  - **Level 1**: Main Service → 인터넷 전체 허용
-  - **Level 2**: AI/DB/Cache → VPC 내부만 허용 (10.0.0.0/16)
+- **Public Subnet** : Nginx Gateway만 배치 (외부 접근 가능)
+- **Private Subnet** : 통합 메인 서버, AI 서버 배치 (외부 접근 불가)
+- **보안 그룹 3계층**: 최소 권한 원칙
+  - **Level 1**: Nginx Gateway → 인터넷 전체 허용 (80, 443, SSH)
+  - **Level 2**: 통합 메인 서버 → Nginx에서만 허용, AI 서버에서 MySQL 접근
+  - **Level 3**: AI 서버 → Nginx에서만 허용
 
 ## 📁 프로젝트 구조
 
@@ -61,9 +59,9 @@ mechuragi-infra/
 │   │       ├── outputs.tf              # 출력 값
 │   │       └── terraform.tfvars        # 실제 변수 값
 │   └── modules/                        # 📦 재사용 가능한 모듈
-│       ├── vpc/                        # Public 서브넷 네트워크
-│       ├── security/                   # 4계층 보안 그룹
-│       ├── compute/                    # 4개 분산 인스턴스
+│       ├── vpc/                        # Public + Private 서브넷 네트워크
+│       ├── security/                   # 3계층 보안 그룹
+│       ├── compute/                    # 3개 통합 인스턴스
 │       ├── s3/                         # Frontend + Images 버킷
 │       ├── cloudfront/                 # 3-Origin CDN
 │       ├── ses/                        # 이메일 서비스 + 템플릿
@@ -75,27 +73,12 @@ mechuragi-infra/
     │   └── all/
     │       └── main.yml                # 통합 변수 설정
     ├── inventory/
-    │   └── hosts.yml                   # 4개 서버 인벤토리
-    ├── roles/                          # 🔧 Ansible 역할
-    │   ├── common/                     # 기본 시스템 설정
-    │   ├── docker/                     # Docker 환경
-    │   ├── mysql/                      # MySQL 데이터베이스
-    │   ├── redis/                      # Redis 캐시
-    │   └── nginx/                      # Nginx 템플릿
-    └── playbooks/                      # 🎮 실행 플레이북
-        ├── setup/                      # 🔧 설치 및 구성
-        │   ├── deploy-all-services.yml    # 전체 인프라 배포
-        │   ├── setup-basic-system.yml     # 기본 시스템 설정
-        │   ├── setup-database.yml         # MySQL 설치
-        │   ├── setup-cache.yml            # Redis 설치
-        │   ├── setup-docker-only.yml      # Docker 설치
-        │   └── setup-nginx.yml            # Nginx 설치
-        └── test/                       # ✅ 검증 및 테스트
-            ├── test-connectivity.yml       # AI/Main 서비스 헬스체크
-            ├── test-db.yml                 # MySQL 연결성 테스트
-            ├── test-redis.yml              # Redis 연결성 테스트
-            ├── test-docker.yml             # Docker 설치 검증
-            └── test-front.yml              # 프론트엔드 테스트
+    │   └── hosts.yml                   # 3개 서버 인벤토리
+    └── playbooks/                      # 🎮 실행 플레이북 (단순화)
+        ├── site.yml                    # 🚀 메인 오케스트레이션 (전체 실행)
+        ├── common.yml                  # 🔧 공통 시스템 설정
+        ├── docker.yml                  # 🐳 Docker 설치
+        └── nginx-gateway.yml           # 🌐 Nginx Gateway + NAT 설정
 ```
 
 ## 🏛️ 인프라 구성
@@ -103,32 +86,43 @@ mechuragi-infra/
 ### AWS 핵심 리소스
 
 #### 🌐 네트워크 (VPC 모듈)
-- **VPC**: 10.0.0.0/16 CIDR 블록
-- **Public Subnet**: 10.0.2.0/24 (모든 인스턴스 배치)
-- **Internet Gateway**: 직접 인터넷 연결
-- **🔥 NAT Gateway 제거**: 월 $45 비용 절감
+- **VPC**: CIDR 블록
+- **Public Subnet**:  (Nginx Gateway 배치)
+- **Private Subnet**:  (통합 메인 서버, AI 서버 배치)
+- **Internet Gateway**: Public Subnet 인터넷 연결
+- **NAT Instance**: Nginx가 NAT 역할 (Private Subnet 아웃바운드)
+- **🔥 NAT Gateway 제거**: 월 $40-50 비용 절감
 
 #### 💻 컴퓨팅 (Compute 모듈)
-- **메인 서비스**: t3.micro (Public IP + Elastic IP)
-- **AI 서비스**: t3.small (Bedrock IAM Profile)
-- **MySQL 서버**: t3.micro (30GB gp3 볼륨)
-- **Redis 서버**: t3.micro (캐시 전용)
-- **🔥 75% 비용 절감**: 3개 서비스를 t3.micro로 최적화
+- **통합 메인 서버**: t3.medium (Private Subnet, MySQL+Redis+API 통합)
+  - Docker Compose로 통합 관리
+  - 동일 호스트 내 localhost 통신
+  - Private IP만 할당 (Public IP 없음)
+- **AI 서버**: t3.small (Private Subnet, Bedrock IAM Profile)
+  - AI 게이트웨이 역할
+  - MySQL 직접 접근 (사용자 정보 조회)
+  - Private IP만 할당 (Public IP 없음)
+- **Nginx Gateway**: t3.micro (Public Subnet, Public IP + Elastic IP)
+  - 리버스 프록시 + Bastion + NAT
+  - CloudFront → Nginx → Backend 라우팅
+  - SSH 게이트웨이 (모든 서버 접근)
+- **🔥 90% 비용 절감**: Elastic IP 1개, 리소스 통합, NAT Gateway 제거
 
 #### 🛡️ 보안 (Security 모듈)
-- **Main Service SG**:
-  - HTTP(80), HTTPS(443): 전체 인터넷 허용 (CloudFront 포함)
-  - SSH(22): 관리용
-  - Spring(8080): 내부 통신
-- **AI Service SG**:
-  - Spring(8082): VPC 내부만 (10.0.0.0/16)
-  - SSH(22): 관리용
-- **MySQL SG**:
-  - MySQL(3306): VPC 내부만 (10.0.%에서만 접근)
-  - SSH(22): 관리용
-- **Redis SG**:
-  - Redis(6379): VPC 내부만 (10.0.0.0/16)
-  - SSH(22): 관리용
+- **Nginx Gateway SG**:
+  - HTTP(80), HTTPS(443): 인터넷 전체 허용 (CloudFront)
+  - SSH(22): 관리자 IP만 허용
+  - 아웃바운드: VPC 내부 + 인터넷 (NAT 기능)
+- **통합 메인 서버 SG**:
+  - HTTP(80), HTTPS(443): Nginx에서만 허용 (VPC 내부)
+  - SSH(22): Nginx에서만 허용 (Bastion)
+  - Spring(8080): Nginx에서만 허용
+  - MySQL(3306): AI 서버에서 허용 (VPC 내부)
+  - Redis(6379): 컨테이너 간 localhost 통신
+- **AI 서버 SG**:
+  - Spring(8082): Nginx에서만 허용 (VPC 내부)
+  - SSH(22): Nginx에서만 허용 (Bastion)
+  - 아웃바운드: MySQL 접근, Bedrock API 호출
 
 #### 🗄️ 스토리지 (S3 모듈)
 - **Frontend Bucket**: `mechuragi-dev-frontend` (React SPA)
@@ -140,12 +134,15 @@ mechuragi-infra/
 - **3-Origin 구조**:
   - Frontend Origin: React 정적 파일 (S3 + OAC)
   - Images Origin: 이미지 파일 (S3 + OAC)
-  - API Origin: Spring Boot API (EC2:80 Nginx → 8080)
+  - API Origin: Nginx Gateway (Public IP)
+    - `/api/*` → 통합 메인 서버 :8080
+    - `/recommend/*` → AI 서버 :8082
 - **커스텀 도메인**: `mechuragi.kro.kr` (ACM SSL 인증서)
 - **캐시 정책**: 용도별 차별화된 TTL 설정
   - React 파일: 1일 (최대 1년)
   - 이미지: 1주일 (최대 1년)
   - API: 캐싱 비활성화 (실시간 데이터)
+  - AI 추천: 캐싱 비활성화 (개인화된 응답)
 - **SPA 지원**: 404/403 → index.html 리디렉션
 - **보안**: HTTPS 강제, S3 직접 접근 차단 (OAC)
 
@@ -165,20 +162,29 @@ mechuragi-infra/
 
 ### 서버 소프트웨어 스택
 
-#### 🐳 컨테이너 환경
-- **Docker & Docker Compose**: 컨테이너 오케스트레이션
-- **Blue-Green 배포**: 무중단 서비스 업데이트
-- **MySQL 8.0**: 네이티브 설치 (VPC 내부 bind-address: 0.0.0.0)
-- **Redis 6**: 네이티브 설치 (VPC 내부 통신)
-- **Nginx**: Reverse Proxy (CloudFront → API 라우팅)
+#### 🐳 통합 메인 서버 (Docker Compose)
+- **Docker Compose**: MySQL + Redis + API 통합 관리
+- **MySQL 8.0 컨테이너**: 데이터베이스 서비스
+  - 볼륨 마운트로 데이터 영속성 확보
+  - VPC 내부 통신 (AI 서버 접근 허용)
+- **Redis 6 컨테이너**: 캐싱 레이어
+  - localhost 통신으로 네트워크 레이턴시 최소화
+- **API 컨테이너**: Spring Boot 메인 서비스
+  - localhost로 MySQL/Redis 접근
+  - Blue-Green 배포 지원
 - **Multi-platform 빌드**: ARM64/AMD64 지원
 
-#### 🌐 Nginx 설정 (역방향 프록시)
-- **포트 80**: CloudFront에서 들어오는 요청 처리
-- **라우팅**:
-  - `/api/*` → Spring Boot (8080)
-  - `/actuator/*` → Spring Boot 헬스체크 (VPC 내부만)
+#### 🌐 Nginx Gateway 설정
+- **포트 80/443**: CloudFront에서 들어오는 요청 처리
+- **리버스 프록시 라우팅**:
+  - `/api/*` → 통합 메인 서버 (Private IP:8080)
+  - `/ai/*` 또는 `/recommend/*` → AI 서버 (Private IP:8082)
+  - `/actuator/*` → 헬스체크 (VPC 내부만)
   - `/` → 404 (프론트엔드는 CloudFront/S3에서 제공)
+- **Bastion Host**: 모든 Private 서버로의 SSH 터널링
+- **NAT Instance**: Private Subnet 아웃바운드 트래픽 중계
+  - IP forwarding 활성화 (sysctl net.ipv4.ip_forward=1)
+  - iptables MASQUERADE 규칙
 - **Blue-Green 지원**: 동적 업스트림 전환 (8080 ↔ 8081)
 
 #### ⚙️ 시스템 도구
@@ -188,25 +194,9 @@ mechuragi-infra/
 
 ## 🚀 배포 가이드
 
-### 🔄 CI/CD 파이프라인 (추천)
+### 🔄 CI/CD 파이프라인
 
 #### GitHub Actions 자동 배포
-```bash
-# 1. GitHub Secrets 설정
-DOCKERHUB_USERNAME     # Docker Hub 사용자명
-DOCKERHUB_TOKEN        # Docker Hub 토큰
-EC2_SSH_KEY            # EC2 SSH 개인키
-MAIN_SERVER_HOST       # 메인 서버 IP
-AI_SERVER_HOST         # AI 서버 IP
-DB_HOST                # MySQL 서버 IP
-DB_PASSWORD            # MySQL 비밀번호
-REDIS_HOST             # Redis 서버 IP
-MAIN_SERVICE_URL       # 메인 서비스 URL
-DISCORD_WEBHOOK        # Discord 알림 웹훅
-
-# 2. 자동 배포 실행
-git push origin main    # main 브랜치 푸시로 자동 배포
-```
 
 #### Blue-Green 배포 프로세스
 1. **빌드 단계**: Spring Boot 애플리케이션 빌드
@@ -261,38 +251,6 @@ terraform apply
 terraform output
 ```
 
-**terraform.tfvars 설정 예시:**
-```hcl
-# AWS 설정
-aws_region   = "ap-northeast-2"
-project_name = "mechuragi"
-environment  = "dev"
-
-# 네트워크
-vpc_cidr = "10.0.0.0/16"
-
-# EC2 인스턴스
-key_pair_name              = "mechuragi-dev-key"
-main_service_instance_type = "t3.micro"
-ai_service_instance_type   = "t3.small"
-mysql_instance_type        = "t3.micro"
-redis_instance_type        = "t3.micro"
-mysql_volume_size          = 30
-
-# SES 이메일
-ses_domain     = "mechuragi.kro.kr"
-ses_from_email = "noreply@mechuragi.kro.kr"
-
-# Bedrock AI (Claude 3 Haiku - 빠르고 비용 효율적)
-bedrock_chat_model      = "anthropic.claude-3-haiku-20240307-v1:0"
-bedrock_smart_model     = "anthropic.claude-3-haiku-20240307-v1:0"
-bedrock_embedding_model = "amazon.titan-embed-text-v1"
-
-# CloudFront 커스텀 도메인 (ACM 인증서 발급 후 활성화)
-domain_name             = "mechuragi.kro.kr"
-use_custom_domain       = true   # ACM 검증 완료 후 true로 설정
-wait_for_acm_validation = true
-```
 
 ### ⚙️ 2단계: Ansible 서버 설정
 
@@ -300,27 +258,20 @@ wait_for_acm_validation = true
 cd ansible
 
 # 1. 인벤토리 파일 설정
-cp inventory/hosts.yml.template inventory/hosts.yml
+vi inventory/hosts.yml
 # Terraform 출력의 IP 주소들을 입력
 
 # 2. 변수 파일 설정
 vi group_vars/all/main.yml
-# 필요한 변수들 설정
+# 필요한 변수들 설정 (MySQL, Redis, Docker 이미지 등)
 
-# 3. 전체 인프라 배포 (권장)
-ansible-playbook -i inventory/hosts.yml playbooks/setup/deploy-all-services.yml
+# 3. 전체 인프라 배포 (한 번에 실행)
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml
 
-# 또는 개별 설정 실행
-ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-basic-system.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-database.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-cache.yml
-ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-nginx.yml
-
-# 4. 배포 검증
-ansible-playbook -i inventory/hosts.yml playbooks/test/test-db.yml
-ansible-playbook -i inventory/hosts.yml playbooks/test/test-redis.yml
-ansible-playbook -i inventory/hosts.yml playbooks/test/test-connectivity.yml
-```
+# site.yml 실행 내용:
+# - common.yml: 모든 서버에 기본 패키지, AWS CLI, 디렉토리 생성
+# - docker.yml: 모든 서버에 Docker 설치
+# - nginx-gateway.yml: Nginx Gateway에 Nginx + NAT 설정
 
 ### 🎨 3단계: React 프론트엔드 배포
 
@@ -340,36 +291,20 @@ aws s3 sync ./images s3://mechuragi-dev-images/images/
 
 ## 📊 배포 결과
 
-### 🖥️ 접속 정보
-```bash
-# 메인 서비스 (Elastic IP)
-ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@XXX.XXX.XXX.XXX
-
-# AI 서비스 (VPC 내부)
-ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@10.0.2.XXX
-
-# MySQL 서버 (VPC 내부)
-ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@10.0.2.XXX
-
-# Redis 서버 (VPC 내부)
-ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@10.0.2.XXX
-```
-
 ### 🌐 서비스 URL
 - **React 앱**: `https://mechuragi.kro.kr/` (CloudFront 커스텀 도메인)
-- **API 엔드포인트**: `https://mechuragi.kro.kr/api/`
+- **API 엔드포인트**: `https://mechuragi.kro.kr/api/` (CloudFront → Nginx → 통합 메인 서버)
+- **AI 추천 엔드포인트**:  `https://mechuragi.kro.kr/recommend/` (CloudFront → Nginx → AI 서버)
 - **이미지 CDN**: `https://mechuragi.kro.kr/images/`
 - **CloudFront 기본 도메인**: `https://XXXXXX.cloudfront.net/`
-- **메인 서비스 직접 (Nginx)**: `http://XXX.XXX.XXX.XXX/api/`
-- **AI 서비스 직접**: `http://10.0.2.XXX:8082` (VPC 내부만)
-- **헬스체크**:
-  - 메인 (외부): `http://XXX.XXX.XXX.XXX/actuator/health`
-  - 메인 (내부): `http://localhost:8080/actuator/health`
-  - AI (VPC): `http://10.0.2.XXX:8082/actuator/health`
+- **Nginx Gateway 직접**: `http://XXX.XXX.XXX.XXX/`
 
 ### 📈 성능 & 비용
-- **EC2 비용**: 월 $25 (3개 t3.micro + 1개 t3.small)
-- **네트워크 비용**: NAT Gateway 제거로 월 $45 절감
+- **EC2 비용**: 월 $35-40 (1개 t3.medium + 1개 t3.small + 1개 t3.micro)
+- **네트워크 비용**:
+  - NAT Gateway 제거: 월 $40-50 절감
+  - Elastic IP 감축: 월 $9 절감 (4개 → 1개)
+- **총 비용 절감**: 월 $50-60 절감 (기존 대비 약 60% 감소)
 - **스토리지**: S3 Standard + CloudFront PriceClass_100
 - **AI 서비스**: Bedrock 사용량 기반 과금
 
@@ -398,31 +333,6 @@ ansible all -m command -a "htop -n 1" -i inventory/hosts.yml
 # GitHub Actions 로그에서 배포 상태 모니터링
 ```
 
-### 🔄 업데이트
-```bash
-# CI/CD 파이프라인을 통한 업데이트 (추천)
-git push origin main  # 자동 배포 트리거
-
-# 수동 Blue-Green 배포
-ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@XXX.XXX.XXX.XXX
-cd /home/ubuntu/app
-./scripts/blue-green-deploy.sh
-
-# 특정 모듈만 재배포
-terraform apply -target=module.cloudfront
-
-# 특정 서버만 재설정
-ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-cache.yml --limit cache
-
-# 특정 서비스 재배포
-ansible-playbook -i inventory/hosts.yml playbooks/setup/setup-database.yml --limit database
-
-# 배포 롤백 (Blue-Green)
-ssh -i ~/.ssh/mechuragi-dev-key.pem ubuntu@XXX.XXX.XXX.XXX
-cd /home/ubuntu/app
-./scripts/blue-green-deploy.sh rollback
-```
-
 ### 🚨 문제 해결
 ```bash
 # Blue-Green 배포 로그 확인
@@ -441,7 +351,6 @@ ansible-playbook -i inventory/hosts.yml playbooks/test/test-redis.yml
 
 # 서비스 헬스체크
 curl -f http://XXX.XXX.XXX.XXX:8080/actuator/health
-curl -f http://10.0.2.XXX:8082/actuator/health
 
 # Nginx 설정 확인
 ansible main_service -m command -a "nginx -t" -i inventory/hosts.yml
@@ -474,11 +383,15 @@ ansible all -m command -a "docker network create app_mechuragi-network" -i inven
 ## 🛡️ 보안 특징
 
 ### 🔒 네트워크 보안
-- **VPC 내부 통신**: DB/캐시는 10.0.0.0/16에서만 접근
-- **MySQL 접근 제어**: VPC 내부 10.0.% 호스트만 허용
-- **Redis bind 설정**: 0.0.0.0으로 VPC 내부 통신, 보안 그룹으로 제어
-- **Nginx Reverse Proxy**: CloudFront → Nginx(80) → Spring Boot(8080)
-- **Elastic IP**: 메인 서비스 고정 IP
+- **Private Subnet 격리**: 통합 메인 서버, AI 서버는 외부 직접 접근 불가
+- **Public IP 최소화**: Nginx Gateway만 Public IP 보유 (Elastic IP 1개)
+- **Bastion Host**: Nginx Gateway를 통해서만 Private 서버 SSH 접근
+- **보안 그룹 3계층**: 최소 권한 원칙
+  - Nginx Gateway: 인터넷 허용 (80, 443, SSH)
+  - 통합 메인 서버: Nginx에서만 허용 + AI에서 MySQL 접근
+  - AI 서버: Nginx에서만 허용
+- **Nginx Reverse Proxy**: CloudFront → Nginx → Private Backend
+- **NAT Instance**: Private Subnet 아웃바운드만 허용 (인바운드 차단)
 - **HTTPS 강제**: CloudFront 자동 리디렉션 + ACM SSL 인증서
 
 ### 🔐 데이터 보안
@@ -486,15 +399,18 @@ ansible all -m command -a "docker network create app_mechuragi-network" -i inven
 - **S3 암호화**: 서버 측 암호화 + 버전 관리
 - **CloudFront OAC**: S3 직접 접근 차단
 - **TLS 1.2**: CloudFront 최소 프로토콜 버전
+- **MySQL 컨테이너**: 볼륨 마운트로 데이터 영속성 + 백업
 
 ### 🔑 접근 보안
 - **SSH 키 인증**: 모든 서버 키 페어 기반
+- **SSH 터널링**: Private 서버는 Nginx를 통해서만 접근 (ProxyCommand)
 - **IAM 최소 권한**: 서비스별 필요 권한만
-  - Main Service: SES 전송 권한
+  - 통합 메인 서버: SES 전송 권한
   - AI Service: Bedrock 접근 권한
-  - MySQL/Redis: EC2 메타데이터 조회 권한
+  - Nginx Gateway: NAT 기능
 - **민감 정보 분리**: Git에서 완전 제외 (.gitignore)
-- **Actuator 보안**: VPC 내부(10.0.0.0/16)에서만 접근
+- **Actuator 보안**: VPC 내부에서만 접근
+- **단일 진입점**: 모든 외부 트래픽은 Nginx Gateway를 통해서만 유입
 
 ## 🔐 SSH 터널링 및 접근 구조
 
@@ -507,74 +423,101 @@ ansible all -m command -a "docker network create app_mechuragi-network" -i inven
          │ SSH (22)
          │ 공인 인터넷
          ▼
-┌─────────────────────────────────────────┐
-│         AWS VPC (10.0.0.0/16)          │
-│                                         │
-│  ┌──────────────────┐ Level 1 (Public) │
-│  │  Main Service    │                  │
-│  │  - Public IP ✓   │ ◄─── SSH 게이트웨이
-│  │  - Private IP ✓  │                  │
-│  └────────┬─────────┘                  │
-│           │ VPC Private Network        │
-│           │ (10.0.x.x)                 │
-│  ┌────────┴─────────────────────────┐  │
-│  │     Level 2 (Private Only)       │  │
-│  │                                  │  │
-│  │  ┌──────────┐  ┌──────────┐    │  │
-│  │  │  MySQL   │  │  Redis   │    │  │
-│  │  │ Private  │  │ Private  │    │  │
-│  │  └──────────┘  └──────────┘    │  │
-│  │  ┌──────────┐                  │  │
-│  │  │AI Server │                  │  │
-│  │  │ Private  │                  │  │
-│  │  └──────────┘                  │  │
-│  └──────────────────────────────────┘  │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│         AWS VPC                    │
+│                                                     │
+│  ┌────────────────────────┐ Public Subnet          │
+│  │  Nginx Gateway         │        │
+│  │  - Public IP ✓         │ ◄─── SSH 게이트웨이    │
+│  │  - Elastic IP ✓        │ ◄─── NAT Instance     │
+│  │  - Bastion Host        │ ◄─── Reverse Proxy    │
+│  └────────┬───────────────┘                        │
+│           │ SSH Tunnel (ProxyCommand)              │
+│           │                                         │
+│  ┌────────┴─────────────────────────────────────┐  │
+│  │     Private Subnet          │  │
+│  │                                              │  │
+│  │  ┌──────────────────┐  ┌──────────────────┐ │  │
+│  │  │ 통합 메인 서버    │  │  AI 서버         │ │  │
+│  │  │ - Private IP ✓   │  │ - Private IP ✓   │ │  │
+│  │  │ ┌──────────────┐ │  │ :8082            │ │  │
+│  │  │ │ MySQL :3306  │◄┼──┤ + Bedrock        │ │  │
+│  │  │ │ Redis :6379  │ │  └──────────────────┘ │  │
+│  │  │ │ API   :8080  │ │                       │  │
+│  │  │ └──────────────┘ │  외부 직접 접근 불가   │  │
+│  │  │ Docker Compose   │                       │  │
+│  │  └──────────────────┘                       │  │
+│  └──────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
 ```
 
 ### 📊 연결 흐름
+
+#### SSH 터널링
+```
+개발자 PC
+    ↓ SSH (22)
+Nginx Gateway (Public IP)
+    ↓ ProxyCommand (%h:%p)
+통합 메인 서버 또는 AI 서버 
+    ↓
+✅ Private 서버 작업 가능
+```
+
+#### MySQL Workbench 연결
 ```
 MySQL Workbench
     ↓
-[SSH 터널] 개발자 PC → Main Service (Public IP:22)
+[SSH 터널] 개발자 PC → Nginx Gateway (Public IP:22)
     ↓
-[MySQL 연결] Main Service → MySQL (Private IP:3306)
+[ProxyCommand] Nginx → 통합 메인 서버 
+    ↓
+[MySQL 연결] 통합 메인 서버 내부 → MySQL Container (localhost:3306)
     ↓
 ✅ DB 작업 가능
 ```
 
 ### 🔐 보안 계층 구조
 
-#### Level 1 (Public)
-- **Main Service**: 외부 접근 가능
-- 역할: SSH 게이트웨이 + 웹 서비스
+#### Level 1 Public Subnet - 
+- **Nginx Gateway**: 외부 접근 가능 (Elastic IP)
+- 역할: Bastion Host + NAT Instance + Reverse Proxy
 
-#### Level 2 (Private)
-- **MySQL, Redis, AI Server**: Private IP만
+#### Level 2 Private Subnet - 
+- **통합 메인 서버**: Private IP만 
+  - MySQL, Redis, API 통합
+  - Docker Compose 관리
+- **AI 서버**: Private IP만 
+  - Bedrock + AI Gateway
 - 외부 직접 접근 불가
-- Main Service 경유만 가능
+- Nginx Gateway 경유만 가능
 
 ### 🎯 핵심 포인트
 ```
-✅ DB는 외부 노출 안 됨 (Private IP만)
-✅ Main Service가 단일 진입점
-✅ 개발자 IP만 SSH 접근 가능
-✅ 2단계 보안 구조 유지
+✅ DB/Redis는 외부 노출 안 됨 (Private Subnet + 컨테이너)
+✅ Nginx Gateway가 단일 진입점 (Bastion Host)
+✅ 관리자 IP만 SSH 접근 가능 (보안 그룹)
+✅ Private 서버는 Public IP 없음 (비용 절감)
+✅ NAT Instance로 아웃바운드만 허용 (보안 강화)
 ```
 
 ### 🛠️ MySQL Workbench 설정
 **SSH 터널 설정:**
 ```
-SSH Hostname: Main Service Public IP
+SSH Hostname: Nginx Gateway Public IP 
 SSH Username: ubuntu
-SSH Key: /path/to/key.pem
-MySQL Hostname: MySQL Private IP (10.0.x.x)
+SSH Key: /path/to/mechuragi-dev-key.pem
+MySQL Hostname: 통합 메인 서버 Private IP 
+MySQL Port: 3306
+MySQL Username: mechuragi_user
 ```
 
 **Security Group:**
 ```
-Main Service Inbound: 개발자IP → 22
-MySQL Inbound: VPC 내부(10.0.0.0/16) → 3306
+Nginx Gateway Inbound: 관리자IP → 22
+통합 메인 서버 Inbound:
+  - Nginx에서만 → 22, 80, 443, 8080
+  - AI 서버에서만 → 3306
 ```
 
 ## 📚 문서 링크
@@ -595,59 +538,92 @@ MySQL Inbound: VPC 내부(10.0.0.0/16) → 3306
 
 ## 💡 주요 특징
 
-- ✅ **분산 마이크로서비스**: 4개 독립 서비스
+- ✅ **통합 마이크로서비스**: 3개 인스턴스 통합 구조 (비용 최적화)
 - ✅ **React + Spring Boot**: 현대적 풀스택 아키텍처
 - ✅ **CloudFront CDN**: 커스텀 도메인 + HTTPS (mechuragi.kro.kr)
-- ✅ **Nginx Reverse Proxy**: CloudFront → Nginx → Spring Boot
+- ✅ **Nginx Gateway**: 리버스 프록시 + Bastion + NAT (3-in-1)
+- ✅ **Private Subnet 격리**: 통합 메인 서버, AI 서버 외부 접근 차단
+- ✅ **Docker Compose 통합**: MySQL + Redis + API 동일 호스트 관리
 - ✅ **Blue-Green 배포**: 무중단 서비스 업데이트
 - ✅ **CI/CD 파이프라인**: GitHub Actions 자동 배포
-- ✅ **Docker 컨테이너화**: 멀티플랫폼 지원
+- ✅ **AI 통신 개선**: AI 서버가 메인 서버 우회 (30-40% 속도 향상)
 - ✅ **실시간 알림**: Discord 배포 상태 모니터링
-- ✅ **비용 최적화**: 75% EC2 비용 절감
-- ✅ **보안 중심**: 4계층 네트워크 보안 + VPC 격리
-- ✅ **CDN 최적화**: 3-Origin CloudFront (React/Images/API)
-- ✅ **AI 통합**: AWS Bedrock 연동
+- ✅ **비용 최적화**: 60% 인프라 비용 절감 (NAT Gateway 제거 + Elastic IP 1개)
+- ✅ **보안 강화**: 3계층 보안 + Bastion Host + Public IP 최소화
+- ✅ **CDN 최적화**: 3-Origin CloudFront (React/Images/API/AI)
+- ✅ **AI 통합**: AWS Bedrock 연동 + AI Gateway
 - ✅ **자동화**: IaC + Configuration Management
 - ✅ **검증 강화**: Ansible 자동 검증 (MySQL/Redis/Nginx)
 - ✅ **확장 가능**: 모듈화된 아키텍처
 
 ---
 
-## 🆕 최신 업데이트 (v2.2)
+## 🆕 최신 업데이트
 
-### ✨ 새로운 기능 (v2.2)
-- **📁 Ansible 구조 개편**: Setup/Test Playbook 분리
-- **✅ 독립적인 테스트**: test-db.yml, test-redis.yml, test-docker.yml
-- **🔧 Setup Playbook 단순화**: 설치/구성에만 집중
-- **📊 상세 검증 시스템**: 4단계 MySQL 검증, 6단계 Redis 검증
-- **🔐 SSH 터널링 가이드**: MySQL Workbench 설정 문서화
+### ✨ v3.0 - 통합 인프라 리팩토링 (현재)
 
-### 🔧 주요 개선사항 (v2.2)
-- **Playbook 관심사 분리**: `playbooks/setup/`과 `playbooks/test/` 디렉토리 구조
-- **setup-nginx.yml 추가**: Nginx 설치를 독립 playbook으로 분리
-- **테스트 자동화**: 각 서비스 설치 후 독립적인 검증 가능
-- **클라이언트 자동 설치**: MySQL/Redis 클라이언트 자동 설치 및 검증
-- **에러 메시지 개선**: 더 깔끔한 테스트 출력 (failed_when/changed_when)
+**🏗️ 아키텍처 대개편: 4개 → 3개 인스턴스**
 
-### ✨ 이전 업데이트 (v2.1)
-- **🌐 CloudFront 커스텀 도메인**: `mechuragi.kro.kr` HTTPS 지원
-- **🔒 ACM SSL 인증서**: TLS 1.2 암호화 통신
-- **🔄 Nginx Reverse Proxy**: CloudFront → Nginx → Spring Boot 아키텍처
-- **📊 Ansible 검증 강화**: MySQL/Redis 설치 후 자동 검증
-- **🔑 IAM 권한 최적화**: EC2 메타데이터 조회 권한 추가
-- **📝 트러블슈팅 문서**: CloudFront 403, VPC 연결성 가이드
-- **CloudFront Origin**: EC2:8080 → Nginx:80 → Spring:8080 (프록시 구조)
-- **Nginx 역할 명확화**: `/api/*`만 처리, 프론트엔드는 S3/CloudFront
-- **MySQL 사용자 권한**: VPC 내부(10.0.%)만 접근 허용 (보안 강화)
-- **Redis bind 설정**: 0.0.0.0으로 VPC 내부 통신 지원
+- **통합 메인 서버** (신규): MySQL + Redis + API를 Docker Compose로 통합
+  - 인스턴스 타입: t3.medium
+  - Private Subnet 배치 (외부 직접 접근 불가)
+  - 동일 호스트 내 localhost 통신으로 네트워크 레이턴시 최소화
 
-### 📦 이전 업데이트 (v2.0)
-- **🔄 Blue-Green 배포**: 메인 서비스 무중단 업데이트
-- **🤖 GitHub Actions CI/CD**: 자동 빌드, 테스트, 배포
-- **🐳 Docker 컨테이너화**: 멀티플랫폼 이미지 빌드 (ARM64/AMD64)
-- **💬 Discord 알림**: 실시간 배포 상태 모니터링
-- **🎯 AI 서비스 분리**: 독립적인 추천 서비스 (Port 8082)
+- **Nginx Gateway** (신규): 리버스 프록시 + Bastion + NAT 3-in-1
+  - 인스턴스 타입: t3.micro
+  - Public Subnet 배치 (유일한 Public IP)
+  - CloudFront → Nginx → Private Backend 라우팅
+  - SSH 게이트웨이 (모든 Private 서버 접근)
+  - NAT Instance (Private Subnet 아웃바운드)
+
+- **AI 서버 통신 개선**: 메인 서버 우회로 30-40% 속도 향상
+  - Before: Frontend → Main → AI → Main → Frontend (5단계)
+  - After: Frontend → Nginx → AI → Frontend (4단계)
+  - AI 서버가 MySQL에 직접 접근하여 사용자 정보 조회
+
+**💰 비용 절감 (60% 감소)**
+- NAT Gateway 제거: 월 $40-50 절감
+- Elastic IP 감축: 월 $9 절감 (4개 → 1개)
+- 리소스 통합: MySQL/Redis 독립 인스턴스 제거
+
+**🔒 보안 강화**
+- Private Subnet 격리: 통합 메인 서버, AI 서버 외부 접근 차단
+- Bastion Host: Nginx를 통해서만 Private 서버 SSH 접근
+- Public IP 최소화: Elastic IP 1개만 사용
+- 보안 그룹 3계층: 최소 권한 원칙
+
+**📈 성능 향상**
+- 네트워크 레이턴시 감소: MySQL/Redis와 API가 localhost 통신
+- 캐시 효율성 증가: Redis와 API 간 네트워크 홉 제거
+- AI 추천 속도 개선: 메인 서버 중계 단계 제거
 
 ---
 
-**🎯 이 인프라는 메추라기 프로젝트의 완전한 분산 마이크로서비스 환경을 제공하며, 개발부터 운영까지 모든 단계를 지원합니다.**
+### ✨ v2.2 - Ansible 구조 개편
+
+- **📁 Playbook 분리**: Setup/Test Playbook 관심사 분리
+- **✅ 독립적인 테스트**: test-db.yml, test-redis.yml, test-docker.yml
+- **🔧 Setup 단순화**: 설치/구성에만 집중
+- **📊 상세 검증**: 4단계 MySQL 검증, 6단계 Redis 검증
+- **🔐 SSH 터널링 가이드**: MySQL Workbench 설정 문서화
+
+---
+
+### ✨ v2.1 - CloudFront 커스텀 도메인
+
+- **🌐 커스텀 도메인**: `mechuragi.kro.kr` HTTPS 지원
+- **🔒 ACM SSL 인증서**: TLS 1.2 암호화 통신
+- **🔄 Nginx Reverse Proxy**: CloudFront → Nginx → Spring Boot
+- **📊 Ansible 검증 강화**: MySQL/Redis 설치 후 자동 검증
+
+---
+
+### ✨ v2.0 - CI/CD 및 Blue-Green 배포
+
+- **🔄 Blue-Green 배포**: 무중단 서비스 업데이트
+- **🤖 GitHub Actions CI/CD**: 자동 빌드, 테스트, 배포
+- **🐳 Docker 컨테이너화**: 멀티플랫폼 이미지 빌드
+- **💬 Discord 알림**: 실시간 배포 상태 모니터링
+- **🎯 AI 서비스 분리**: 독립적인 추천 서비스
+
+---
