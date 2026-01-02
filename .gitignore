@@ -1,12 +1,16 @@
 .terraform/
 *.tfstate
 *.tfstate.backup
+*.backup
 *.tfvars
 !*.tfvars.example
 .env
 *.pem
 *.key
 *.retry
+.DS_Store
+tfplan
+*.tfplan
 
 # Ansible 민감한 변수 파일들
 ansible/group_vars/

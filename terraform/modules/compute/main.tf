@@ -152,6 +152,10 @@ resource "aws_instance" "main_service" {
     encrypted   = true
   }
 
+  lifecycle {
+    ignore_changes = [network_interface]
+  }
+
   tags = {
     Name = "${var.project_name}-${var.environment}-main-integrated"
     Type = "main-integrated"
@@ -185,6 +189,10 @@ resource "aws_instance" "ai_service" {
     volume_type = "gp3"
     volume_size = 20
     encrypted   = true
+  }
+
+  lifecycle {
+    ignore_changes = [network_interface]
   }
 
   tags = {
@@ -233,6 +241,10 @@ resource "aws_instance" "nginx_gateway" {
     volume_type = "gp3"
     volume_size = 20
     encrypted   = true
+  }
+
+  lifecycle {
+    ignore_changes = [network_interface]
   }
 
   user_data = <<-EOF
