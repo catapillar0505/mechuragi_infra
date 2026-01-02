@@ -115,3 +115,73 @@ resource "aws_s3_bucket_cors_configuration" "frontend_bucket_cors" {
     max_age_seconds = 86400
   }
 }
+
+# ========================================
+# 로그 저장용 S3 버킷
+# ========================================
+resource "aws_s3_bucket" "mechuragi_logs_bucket" {
+  bucket = "${var.project_name}-${var.environment}-logs"
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-logs"
+    Purpose     = "Application and infrastructure logs storage"
+    Environment = var.environment
+  }
+}
+
+# 로그 버킷 버전 관리 (감사 추적용)
+resource "aws_s3_bucket_versioning" "logs_bucket_versioning" {
+  bucket = aws_s3_bucket.mechuragi_logs_bucket.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# 로그 버킷 퍼블릭 액세스 완전 차단
+resource "aws_s3_bucket_public_access_block" "logs_bucket_public_access_block" {
+  bucket = aws_s3_bucket.mechuragi_logs_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# 로그 버킷 암호화 (규정 준수)
+resource "aws_s3_bucket_server_side_encryption_configuration" "logs_bucket_sse" {
+  bucket = aws_s3_bucket.mechuragi_logs_bucket.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+# 로그 버킷 Lifecycle Policy (비용 최적화)
+resource "aws_s3_bucket_lifecycle_configuration" "logs_bucket_lifecycle" {
+  bucket = aws_s3_bucket.mechuragi_logs_bucket.id
+
+  rule {
+    id     = "log-retention-policy"
+    status = "Enabled"
+
+    # 30일 후 Standard-IA로 전환 (저렴한 스토리지)
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    # 90일 후 Glacier로 전환 (장기 보관용)
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    # 365일 후 자동 삭제 (1년 보관)
+    expiration {
+      days = 365
+    }
+  }
+}

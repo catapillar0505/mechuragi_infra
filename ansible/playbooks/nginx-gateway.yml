@@ -1,20 +1,137 @@
 ---
-- name: Setup Nginx Gateway (Nginx + Docker only)
+- name: Setup Nginx Gateway (OpenResty + NAT + JWT Auth)
   hosts: nginx_gateway
   become: yes
   tasks:
-    - name: Install Nginx
+    # ========================================
+    # OpenResty 설치
+    # ========================================
+    - name: Install dependencies for OpenResty
       apt:
-        name: nginx
+        name:
+          - wget
+          - gnupg2
+          - ca-certificates
+          - lsb-release
+          - ubuntu-keyring
         state: present
         update_cache: yes
 
-    - name: Start and enable Nginx
+    - name: Download OpenResty GPG key
+      shell: |
+        wget -O - https://openresty.org/package/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/openresty.gpg
+      args:
+        creates: /usr/share/keyrings/openresty.gpg
+
+    - name: Add OpenResty repository
+      shell: |
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/ubuntu $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/openresty.list
+      args:
+        creates: /etc/apt/sources.list.d/openresty.list
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install OpenResty
+      apt:
+        name: openresty
+        state: present
+
+    # ========================================
+    # lua-resty-jwt 라이브러리 설치
+    # ========================================
+    - name: Install lua-resty-jwt dependencies
+      apt:
+        name:
+          - git
+        state: present
+
+    - name: Clone lua-resty-jwt repository
+      git:
+        repo: 'https://github.com/SkyLothar/lua-resty-jwt.git'
+        dest: /tmp/lua-resty-jwt
+        version: master
+        force: yes
+
+    - name: Install lua-resty-jwt to OpenResty
+      shell: |
+        cd /tmp/lua-resty-jwt
+        cp -r lib/resty/* /usr/local/openresty/lualib/resty/
+      args:
+        creates: /usr/local/openresty/lualib/resty/jwt.lua
+
+    # ========================================
+    # 디렉토리 생성
+    # ========================================
+    - name: Create Nginx configuration directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /etc/openresty
+        - /etc/openresty/conf.d
+        - /var/log/openresty
+
+    # ========================================
+    # Nginx 설정 파일 배포
+    # ========================================
+    - name: Deploy Nginx configuration from template
+      template:
+        src: ../templates/nginx.conf.j2
+        dest: /usr/local/openresty/nginx/conf/nginx.conf
+        mode: '0644'
+      notify: Reload OpenResty
+
+    # ========================================
+    # OpenResty 서비스 설정
+    # ========================================
+    - name: Create OpenResty systemd service
+      copy:
+        dest: /etc/systemd/system/openresty.service
+        content: |
+          [Unit]
+          Description=OpenResty - High Performance Web Server
+          After=network.target
+
+          [Service]
+          Type=forking
+          PIDFile=/usr/local/openresty/nginx/logs/nginx.pid
+          Environment="JWT_SECRET={{ jwt_secret }}"
+          ExecStartPre=/usr/local/openresty/nginx/sbin/nginx -t -q -g 'daemon on; master_process on;'
+          ExecStart=/usr/local/openresty/nginx/sbin/nginx -g 'daemon on; master_process on;'
+          ExecReload=/bin/kill -s HUP $MAINPID
+          ExecStop=/bin/kill -s QUIT $MAINPID
+          PrivateTmp=true
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: Reload systemd
+
+    - name: Reload systemd daemon
       systemd:
-        name: nginx
+        daemon_reload: yes
+
+    - name: Validate Nginx configuration
+      command: /usr/local/openresty/nginx/sbin/nginx -t
+      register: nginx_validation
+      changed_when: false
+
+    - name: Display Nginx validation result
+      debug:
+        msg: "{{ nginx_validation.stderr }}"
+
+    - name: Start and enable OpenResty
+      systemd:
+        name: openresty
         state: started
         enabled: yes
 
+    # ========================================
+    # NAT 설정 (기존 유지)
+    # ========================================
     - name: Configure IP forwarding for NAT
       sysctl:
         name: net.ipv4.ip_forward
@@ -37,15 +154,108 @@
         jump: MASQUERADE
       notify: Save iptables
 
-    - name: Verify Nginx installation
-      command: nginx -v
-      register: nginx_version
+    # ========================================
+    # 로그 로테이션 설정
+    # ========================================
+    - name: Create logrotate configuration for OpenResty
+      copy:
+        dest: /etc/logrotate.d/openresty
+        content: |
+          /var/log/openresty/*.log {
+              daily
+              rotate 30
+              compress
+              delaycompress
+              notifempty
+              missingok
+              create 0640 www-data adm
+              sharedscripts
+              postrotate
+                  [ -f /usr/local/openresty/nginx/logs/nginx.pid ] && kill -USR1 `cat /usr/local/openresty/nginx/logs/nginx.pid`
+              endscript
+          }
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Test logrotate configuration
+      command: logrotate -d /etc/logrotate.d/openresty
+      register: logrotate_test
+      changed_when: false
+      failed_when: false
+
+    - name: Display logrotate test result
+      debug:
+        msg: "{{ logrotate_test.stdout_lines }}"
+
+    # ========================================
+    # S3 로그 백업 설정
+    # ========================================
+    - name: Install AWS CLI
+      apt:
+        name: awscli
+        state: present
+        update_cache: yes
+
+    - name: Deploy S3 log backup script
+      template:
+        src: ../templates/s3-log-backup.sh.j2
+        dest: /usr/local/bin/s3-log-backup.sh
+        mode: '0755'
+        owner: root
+        group: root
+      vars:
+        s3_logs_bucket: "{{ project_name }}-{{ env }}-logs"
+
+    - name: Create S3 backup log directory
+      file:
+        path: /var/log
+        state: directory
+        mode: '0755'
+
+    - name: Create cron job for S3 log backup
+      cron:
+        name: "S3 log backup"
+        minute: "0"
+        hour: "2"
+        job: "/usr/local/bin/s3-log-backup.sh >> /var/log/s3-backup.log 2>&1"
+        user: root
+        state: present
+
+    - name: Test S3 backup script syntax
+      command: bash -n /usr/local/bin/s3-log-backup.sh
       changed_when: false
 
-    - name: Display Nginx version
+    # ========================================
+    # 검증
+    # ========================================
+    - name: Verify OpenResty installation
+      command: /usr/local/openresty/nginx/sbin/nginx -v
+      register: openresty_version
+      changed_when: false
+
+    - name: Display OpenResty version
       debug:
-        msg: "{{ nginx_version.stderr }}"
+        msg: "{{ openresty_version.stderr }}"
+
+    - name: Verify lua-resty-jwt installation
+      stat:
+        path: /usr/local/openresty/lualib/resty/jwt.lua
+      register: jwt_lib
+
+    - name: Display JWT library status
+      debug:
+        msg: "lua-resty-jwt installed: {{ jwt_lib.stat.exists }}"
 
   handlers:
     - name: Save iptables
       shell: iptables-save > /etc/iptables/rules.v4
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Reload OpenResty
+      systemd:
+        name: openresty
+        state: reloaded

@@ -1,0 +1,203 @@
+# OpenResty Nginx Configuration for Mechuragi API Gateway
+# JWT 검증 + Blue-Green 배포 지원
+
+user www-data;
+worker_processes auto;
+pid /usr/local/openresty/nginx/logs/nginx.pid;
+
+# JWT Secret (Ansible 변수로 주입)
+env JWT_SECRET;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /usr/local/openresty/nginx/conf/mime.types;
+    default_type application/octet-stream;
+
+    # 로깅 설정
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/openresty/access.log main;
+    error_log /var/log/openresty/error.log warn;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+
+    # Gzip 압축
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript
+               application/json application/javascript application/xml+rss
+               application/rss+xml font/truetype font/opentype
+               application/vnd.ms-fontobject image/svg+xml;
+
+    # Blue-Green 배포: 메인 서버 Upstream
+    upstream main_server {
+        # 기본값: Blue (8080)
+        # Ansible에서 배포 시 동적으로 변경
+        server {{ main_service_private_ip }}:{{ main_server_blue_port }};
+    }
+
+    # AI 서버 Upstream
+    upstream ai_server {
+        server {{ ai_service_private_ip }}:8082;
+    }
+
+    # 메인 서버 (API Gateway)
+    server {
+        listen 80;
+        server_name _;
+
+        # 클라이언트 요청 크기 제한 (파일 업로드 고려)
+        client_max_body_size 50M;
+
+        # ==========================================
+        # /api/* 경로: 메인 서버로 프록시 (Spring Security 검증)
+        # ==========================================
+        location /api/ {
+            proxy_pass http://main_server;
+            proxy_http_version 1.1;
+
+            # 프록시 헤더 설정
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # WebSocket 지원
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+
+            # 타임아웃 설정
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+
+        # ==========================================
+        # /actuator/* 경로: 헬스체크 및 모니터링
+        # ==========================================
+        location /actuator/ {
+            proxy_pass http://main_server;
+            proxy_http_version 1.1;
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # ==========================================
+        # /recommend/* 경로: AI 서버로 프록시 (Nginx에서 JWT 검증)
+        # ==========================================
+        location /recommend/ {
+            # Lua를 이용한 JWT 검증
+            access_by_lua_block {
+                local jwt = require "resty.jwt"
+                local cjson = require "cjson"
+
+                -- Authorization 헤더에서 JWT 토큰 추출
+                local auth_header = ngx.var.http_authorization
+                if not auth_header then
+                    ngx.status = 401
+                    ngx.say(cjson.encode({error = "Missing Authorization header"}))
+                    return ngx.exit(401)
+                end
+
+                -- Bearer 토큰 파싱
+                local token = auth_header:match("Bearer%s+(.+)")
+                if not token then
+                    ngx.status = 401
+                    ngx.say(cjson.encode({error = "Invalid Authorization format. Expected: Bearer <token>"}))
+                    return ngx.exit(401)
+                end
+
+                -- JWT Secret 가져오기 (환경 변수)
+                local jwt_secret = os.getenv("JWT_SECRET")
+                if not jwt_secret then
+                    ngx.log(ngx.ERR, "JWT_SECRET environment variable not set")
+                    ngx.status = 500
+                    ngx.say(cjson.encode({error = "Internal server error"}))
+                    return ngx.exit(500)
+                end
+
+                -- JWT 검증
+                local jwt_obj = jwt:verify(jwt_secret, token)
+
+                if not jwt_obj.verified then
+                    ngx.log(ngx.WARN, "JWT verification failed: ", jwt_obj.reason)
+                    ngx.status = 401
+                    ngx.say(cjson.encode({error = "Invalid or expired token"}))
+                    return ngx.exit(401)
+                end
+
+                -- payload에서 memberId 추출
+                local member_id = jwt_obj.payload.memberId
+                if not member_id then
+                    ngx.status = 401
+                    ngx.say(cjson.encode({error = "Missing memberId in token"}))
+                    return ngx.exit(401)
+                end
+
+                -- X-Member-Id 헤더 설정 (AI 서버로 전달)
+                ngx.req.set_header("X-Member-Id", tostring(member_id))
+            }
+
+            # AI 서버로 프록시
+            proxy_pass http://ai_server;
+            proxy_http_version 1.1;
+
+            # 프록시 헤더 설정
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # X-Member-Id는 access_by_lua_block에서 설정됨
+
+            # 타임아웃 설정 (AI 응답 시간 고려)
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 120s;
+            proxy_read_timeout 120s;
+        }
+
+        # ==========================================
+        # 루트 경로: 메인 서버로 프록시
+        # ==========================================
+        location / {
+            proxy_pass http://main_server;
+            proxy_http_version 1.1;
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # WebSocket 지원
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+
+        # ==========================================
+        # Nginx 자체 헬스체크 엔드포인트
+        # ==========================================
+        location /nginx-health {
+            access_log off;
+            return 200 "Nginx Gateway OK\n";
+            add_header Content-Type text/plain;
+        }
+    }
+}

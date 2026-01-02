@@ -19,6 +19,11 @@ main_service_instance_type = "t3.medium"    # MySQL + Redis + API 통합 서버
 ai_service_instance_type = "t3.small"       # AI 추천 서비스
 nginx_gateway_instance_type = "t3.micro"    # Nginx 게이트웨이
 
+# SSH 접근 허용 IP (개발자 IP 화이트리스트)
+admin_ssh_cidrs = [
+  "YOUR_IP_ADDRESS/32",    # 개발자 IP
+]
+
 # SES 설정
 ses_domain = "yourdomain.com"  # 도메인 (예: "mechuragi.kro.kr")
 ses_from_email = "noreply@yourdomain.com"
