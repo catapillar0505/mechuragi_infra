@@ -42,6 +42,15 @@ resource "aws_security_group" "main_service" {
     security_groups = [aws_security_group.nginx_gateway.id]
   }
 
+  # Spring Boot Blue-Green 배포용 포트 - Nginx에서만 허용
+  ingress {
+    description     = "Spring Boot Main App (Green) from Nginx"
+    from_port       = 8081
+    to_port         = 8081
+    protocol        = "tcp"
+    security_groups = [aws_security_group.nginx_gateway.id]
+  }
+
   # MySQL 포트 - AI 서버에서 직접 접근 허용
   ingress {
     description     = "MySQL from AI service"
