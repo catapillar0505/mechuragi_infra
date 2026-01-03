@@ -1,0 +1,57 @@
+#!/bin/bash
+# OpenResty 로그를 S3로 백업하는 스크립트
+# 매일 새벽 2시에 실행되어 전날 압축된 로그를 S3로 업로드
+
+set -e  # 에러 발생 시 스크립트 중단
+
+LOG_DIR="/var/log/openresty"
+S3_BUCKET="{{ s3_logs_bucket }}"
+DATE=$(date -d "yesterday" +%Y/%m/%d)
+HOSTNAME=$(hostname)
+LOG_FILE="/var/log/s3-backup.log"
+
+# 로그 함수
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a $LOG_FILE
+}
+
+log "========== S3 로그 백업 시작 =========="
+log "버킷: s3://$S3_BUCKET/nginx/$HOSTNAME/$DATE/"
+
+# AWS CLI 설치 확인
+if ! command -v aws &> /dev/null; then
+    log "ERROR: AWS CLI가 설치되지 않았습니다."
+    exit 1
+fi
+
+# 압축된 로그 파일 개수 확인
+COMPRESSED_LOGS=$(find $LOG_DIR -name "*.log.*.gz" -mtime -2 -type f | wc -l)
+log "업로드할 압축 로그 파일: ${COMPRESSED_LOGS}개"
+
+if [ "$COMPRESSED_LOGS" -eq 0 ]; then
+    log "업로드할 로그 파일이 없습니다."
+    exit 0
+fi
+
+# S3로 업로드 (어제와 오늘 압축된 파일만)
+aws s3 sync $LOG_DIR s3://$S3_BUCKET/nginx/$HOSTNAME/$DATE/ \
+    --exclude "*" \
+    --include "*.log.*.gz" \
+    --storage-class STANDARD \
+    --region ap-northeast-2 \
+    --no-progress 2>&1 | tee -a $LOG_FILE
+
+UPLOAD_STATUS=$?
+
+if [ $UPLOAD_STATUS -eq 0 ]; then
+    log "✅ S3 업로드 성공"
+
+    # 30일 이상 된 로컬 압축 파일 삭제 (디스크 공간 절약)
+    DELETED=$(find $LOG_DIR -name "*.log.*.gz" -mtime +30 -type f -delete -print | wc -l)
+    log "30일 이상 된 로그 ${DELETED}개 삭제"
+else
+    log "❌ S3 업로드 실패 (Exit Code: $UPLOAD_STATUS)"
+    exit 1
+fi
+
+log "========== S3 로그 백업 완료 =========="

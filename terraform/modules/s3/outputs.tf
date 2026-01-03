@@ -45,3 +45,14 @@ output "s3_bucket_arn" {
   description = "ARN of the S3 bucket (deprecated - use s3_images_bucket_arn)"
   value       = aws_s3_bucket.mechuragi_images_bucket.arn
 }
+
+# 로그 버킷 출력값
+output "s3_logs_bucket_name" {
+  description = "Name of the S3 logs bucket"
+  value       = aws_s3_bucket.mechuragi_logs_bucket.bucket
+}
+
+output "s3_logs_bucket_arn" {
+  description = "ARN of the S3 logs bucket"
+  value       = aws_s3_bucket.mechuragi_logs_bucket.arn
+}
