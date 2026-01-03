@@ -124,3 +124,29 @@ output "acm_domain_validation_options" {
   description = "kro.kr DNS 관리 페이지에 추가해야 할 CNAME 레코드"
   value       = module.acm_certificate.domain_validation_options
 }
+
+# CloudWatch Logs outputs
+output "main_service_mysql_log_group" {
+  description = "CloudWatch log group name for Main Service MySQL"
+  value       = module.cloudwatch_logs.main_service_mysql_log_group_name
+}
+
+output "main_service_redis_log_group" {
+  description = "CloudWatch log group name for Main Service Redis"
+  value       = module.cloudwatch_logs.main_service_redis_log_group_name
+}
+
+output "main_service_api_log_group" {
+  description = "CloudWatch log group name for Main Service API"
+  value       = module.cloudwatch_logs.main_service_api_log_group_name
+}
+
+output "ai_service_log_group" {
+  description = "CloudWatch log group name for AI Service"
+  value       = module.cloudwatch_logs.ai_service_log_group_name
+}
+
+output "nginx_gateway_log_group" {
+  description = "CloudWatch log group name for Nginx Gateway"
+  value       = module.cloudwatch_logs.nginx_gateway_log_group_name
+}

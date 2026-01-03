@@ -144,7 +144,7 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     path_pattern           = "/login/*"
     allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "api-origin"
+    target_origin_id       = "nginx-gateway-origin"
     compress               = false
     viewer_protocol_policy = "redirect-to-https"
 
@@ -166,7 +166,7 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     path_pattern           = "/swagger-ui/*"
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "api-origin"
+    target_origin_id       = "nginx-gateway-origin"
     compress               = false
     viewer_protocol_policy = "redirect-to-https"
 
@@ -188,7 +188,7 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     path_pattern           = "/v3/api-docs*"
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "api-origin"
+    target_origin_id       = "nginx-gateway-origin"
     compress               = false
     viewer_protocol_policy = "redirect-to-https"
 

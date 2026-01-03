@@ -110,3 +110,10 @@ variable "wait_for_acm_validation" {
   type        = bool
   default     = false
 }
+
+# CloudWatch Logs Variables
+variable "log_retention_days" {
+  description = "Number of days to retain logs in CloudWatch"
+  type        = number
+  default     = 30
+}

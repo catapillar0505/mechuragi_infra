@@ -136,3 +136,12 @@ module "ses" {
   domain_name  = var.ses_domain
   from_email   = var.ses_from_email
 }
+
+# CloudWatch Logs 모듈 호출
+module "cloudwatch_logs" {
+  source = "../../modules/cloudwatch-logs"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  log_retention_days = var.log_retention_days
+}
