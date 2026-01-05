@@ -1,23 +1,3 @@
-output "bedrock_role_arn" {
-  description = "ARN of the Bedrock IAM role"
-  value       = aws_iam_role.bedrock_role.arn
-}
-
-output "bedrock_role_name" {
-  description = "Name of the Bedrock IAM role"
-  value       = aws_iam_role.bedrock_role.name
-}
-
-output "bedrock_instance_profile_name" {
-  description = "Name of the Bedrock instance profile"
-  value       = aws_iam_instance_profile.bedrock_profile.name
-}
-
-output "bedrock_instance_profile_arn" {
-  description = "ARN of the Bedrock instance profile"
-  value       = aws_iam_instance_profile.bedrock_profile.arn
-}
-
 output "cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group for Bedrock"
   value       = aws_cloudwatch_log_group.bedrock_logs.name

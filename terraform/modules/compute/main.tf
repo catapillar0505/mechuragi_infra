@@ -19,110 +19,6 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-# 현재 AWS 계정 및 리전 정보
-data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
-
-# EC2 메타데이터 조회용 IAM Role (MySQL, Redis용)
-resource "aws_iam_role" "ec2_describe_role" {
-  name = "${var.project_name}-${var.environment}-ec2-describe-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-ec2-describe-role"
-    Project     = var.project_name
-    Environment = var.environment
-  }
-}
-
-# Nginx Gateway용 IAM Role (S3 로그 업로드용)
-resource "aws_iam_role" "nginx_gateway_role" {
-  name = "${var.project_name}-${var.environment}-nginx-gateway-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-nginx-gateway-role"
-    Project     = var.project_name
-    Environment = var.environment
-  }
-}
-
-# Nginx Gateway S3 로그 업로드 정책
-data "aws_iam_policy_document" "nginx_s3_logs_policy" {
-  statement {
-    sid    = "AllowS3LogsUpload"
-    effect = "Allow"
-    actions = [
-      "s3:PutObject",
-      "s3:PutObjectAcl",
-      "s3:GetObject",
-      "s3:ListBucket"
-    ]
-    resources = [
-      "arn:aws:s3:::${var.project_name}-${var.environment}-logs",
-      "arn:aws:s3:::${var.project_name}-${var.environment}-logs/*"
-    ]
-  }
-}
-
-resource "aws_iam_role_policy" "nginx_s3_logs_policy" {
-  name   = "${var.project_name}-${var.environment}-nginx-s3-logs-policy"
-  role   = aws_iam_role.nginx_gateway_role.id
-  policy = data.aws_iam_policy_document.nginx_s3_logs_policy.json
-}
-
-resource "aws_iam_instance_profile" "nginx_gateway_profile" {
-  name = "${var.project_name}-${var.environment}-nginx-gateway-profile"
-  role = aws_iam_role.nginx_gateway_role.name
-}
-
-# EC2 메타데이터 및 Security Group 조회 권한
-data "aws_iam_policy_document" "ec2_describe_policy" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "ec2:DescribeInstances",
-      "ec2:DescribeSecurityGroups"
-    ]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role_policy" "ec2_describe_policy" {
-  name   = "${var.project_name}-${var.environment}-ec2-describe-policy"
-  role   = aws_iam_role.ec2_describe_role.id
-  policy = data.aws_iam_policy_document.ec2_describe_policy.json
-}
-
-resource "aws_iam_instance_profile" "ec2_describe_profile" {
-  name = "${var.project_name}-${var.environment}-ec2-describe-profile"
-  role = aws_iam_role.ec2_describe_role.name
-}
-
 # 통합 메인 서비스용 ENI (Private Subnet, 사설 IP만)
 resource "aws_network_interface" "main_service_eni" {
   subnet_id       = var.private_subnet_id
@@ -139,7 +35,7 @@ resource "aws_instance" "main_service" {
   ami                  = data.aws_ami.ubuntu.id
   instance_type        = var.main_service_instance_type
   key_name             = var.key_pair_name
-  iam_instance_profile = var.ses_instance_profile_name  # SES 권한 유지
+  iam_instance_profile = var.main_instance_profile_name
 
   network_interface {
     network_interface_id = aws_network_interface.main_service_eni.id
@@ -178,7 +74,7 @@ resource "aws_instance" "ai_service" {
   ami                  = data.aws_ami.ubuntu.id
   instance_type        = var.ai_service_instance_type
   key_name             = var.key_pair_name
-  iam_instance_profile = var.bedrock_instance_profile_name  # Bedrock 권한 유지
+  iam_instance_profile = var.ai_instance_profile_name
 
   network_interface {
     network_interface_id = aws_network_interface.ai_service_eni.id
@@ -230,7 +126,7 @@ resource "aws_instance" "nginx_gateway" {
   ami                  = data.aws_ami.ubuntu.id
   instance_type        = var.nginx_gateway_instance_type
   key_name             = var.key_pair_name
-  iam_instance_profile = aws_iam_instance_profile.nginx_gateway_profile.name
+  iam_instance_profile = var.nginx_instance_profile_name
 
   network_interface {
     network_interface_id = aws_network_interface.nginx_gateway_eni.id

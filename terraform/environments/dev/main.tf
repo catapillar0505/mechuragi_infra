@@ -54,6 +54,14 @@ module "security" {
   admin_ssh_cidrs  = var.admin_ssh_cidrs
 }
 
+# IAM 모듈 호출 (통합 IAM Roles)
+module "iam" {
+  source = "../../modules/iam"
+
+  project_name = var.project_name
+  environment  = var.environment
+}
+
 # Bedrock 모듈 호출 (AI 서비스에서 사용)
 module "bedrock" {
   source = "../../modules/bedrock"
@@ -81,8 +89,9 @@ module "compute" {
   public_subnet_id               = module.vpc.public_subnet_id
   private_subnet_id              = module.vpc.private_subnet_id
   private_route_table_id         = module.vpc.private_route_table_id
-  bedrock_instance_profile_name  = module.bedrock.bedrock_instance_profile_name
-  ses_instance_profile_name      = module.ses.ses_instance_profile_name
+  main_instance_profile_name     = module.iam.main_profile_name
+  ai_instance_profile_name       = module.iam.ai_profile_name
+  nginx_instance_profile_name    = module.iam.nginx_profile_name
 }
 
 # S3 모듈 호출

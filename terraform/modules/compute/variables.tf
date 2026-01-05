@@ -61,12 +61,17 @@ variable "private_route_table_id" {
   type        = string
 }
 
-variable "bedrock_instance_profile_name" {
-  description = "Name of the Bedrock IAM instance profile for AI service"
+variable "main_instance_profile_name" {
+  description = "Name of the main service IAM instance profile"
   type        = string
 }
 
-variable "ses_instance_profile_name" {
-  description = "Name of the SES IAM instance profile for main service"
+variable "ai_instance_profile_name" {
+  description = "Name of the AI service IAM instance profile"
+  type        = string
+}
+
+variable "nginx_instance_profile_name" {
+  description = "Name of the nginx gateway IAM instance profile"
   type        = string
 }

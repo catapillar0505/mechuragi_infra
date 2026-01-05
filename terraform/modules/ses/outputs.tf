@@ -22,13 +22,3 @@ output "configuration_set_name" {
   description = "Name of the SES configuration set"
   value       = aws_ses_configuration_set.main.name
 }
-
-output "ses_role_arn" {
-  description = "ARN of the SES IAM role"
-  value       = aws_iam_role.ses_sending_role.arn
-}
-
-output "ses_instance_profile_name" {
-  description = "Name of the SES instance profile"
-  value       = aws_iam_instance_profile.ses_profile.name
-}
