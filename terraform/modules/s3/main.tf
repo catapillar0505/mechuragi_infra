@@ -167,6 +167,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs_bucket_lifecycle" {
     id     = "log-retention-policy"
     status = "Enabled"
 
+    filter {}
+
     # 30일 후 Standard-IA로 전환 (저렴한 스토리지)
     transition {
       days          = 30

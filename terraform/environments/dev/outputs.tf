@@ -78,17 +78,23 @@ output "ses_configuration_set" {
   value       = module.ses.configuration_set_name
 }
 
+# IAM outputs
+output "main_profile_name" {
+  description = "Main service IAM instance profile name"
+  value       = module.iam.main_profile_name
+}
+
+output "ai_profile_name" {
+  description = "AI service IAM instance profile name"
+  value       = module.iam.ai_profile_name
+}
+
+output "nginx_profile_name" {
+  description = "Nginx gateway IAM instance profile name"
+  value       = module.iam.nginx_profile_name
+}
+
 # Bedrock outputs
-output "bedrock_role_arn" {
-  description = "Bedrock IAM role ARN"
-  value       = module.bedrock.bedrock_role_arn
-}
-
-output "bedrock_instance_profile" {
-  description = "Bedrock instance profile name"
-  value       = module.bedrock.bedrock_instance_profile_name
-}
-
 output "bedrock_log_group" {
   description = "Bedrock CloudWatch log group"
   value       = module.bedrock.cloudwatch_log_group_name
