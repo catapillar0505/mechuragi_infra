@@ -99,7 +99,7 @@ http {
         # ==========================================
         # /recommend/* 경로: AI 서버로 프록시 (Nginx에서 JWT 검증)
         # ==========================================
-        location /recommend/ {
+        location /recommend* {
             # Lua를 이용한 JWT 검증
             access_by_lua_block {
                 local jwt = require "resty.jwt"
@@ -161,6 +161,9 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # 추가: 모든 http:// 를 https://로 치환 (일반적인 경우)
+            proxy_redirect http:// https://;
 
             # X-Member-Id는 access_by_lua_block에서 설정됨
 
