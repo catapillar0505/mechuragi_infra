@@ -119,7 +119,7 @@ resource "aws_cloudfront_distribution" "main_distribution" {
 
   # AI 추천 API 캐시 동작 (Nginx → AI 서버)
   ordered_cache_behavior {
-    path_pattern           = "/recommend/*"
+    path_pattern           = "/recommend*"
     allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods         = ["GET", "HEAD"]
     target_origin_id       = "nginx-gateway-origin"
