@@ -2,6 +2,8 @@
 - name: Setup Nginx Gateway (OpenResty + NAT + JWT Auth)
   hosts: nginx_gateway
   become: yes
+  vars_files:
+    - ../group_vars/all/main.yml
   tasks:
     # ========================================
     # OpenResty 설치
@@ -187,6 +189,58 @@
     - name: Display logrotate test result
       debug:
         msg: "{{ logrotate_test.stdout_lines }}"
+
+    # ========================================
+    # CloudWatch Logs Agent 설치 및 설정
+    # ========================================
+    - name: Download CloudWatch Agent
+      get_url:
+        url: https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+        dest: /tmp/amazon-cloudwatch-agent.deb
+        mode: '0644'
+
+    - name: Install CloudWatch Agent
+      apt:
+        deb: /tmp/amazon-cloudwatch-agent.deb
+        state: present
+
+    - name: Create CloudWatch Agent configuration directory
+      file:
+        path: /opt/aws/amazon-cloudwatch-agent/etc
+        state: directory
+        mode: '0755'
+
+    - name: Deploy CloudWatch Agent configuration
+      template:
+        src: ../templates/cloudwatch-agent-config.json.j2
+        dest: /opt/aws/amazon-cloudwatch-agent/etc/config.json
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Start CloudWatch Agent
+      command: >
+        /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+        -a fetch-config
+        -m ec2
+        -s
+        -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+      changed_when: true
+
+    - name: Enable CloudWatch Agent service
+      systemd:
+        name: amazon-cloudwatch-agent
+        enabled: yes
+        state: started
+
+    - name: Verify CloudWatch Agent status
+      command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status
+      register: cw_agent_status
+      changed_when: false
+
+    - name: Display CloudWatch Agent status
+      debug:
+        msg: "{{ cw_agent_status.stdout }}"
 
     # ========================================
     # S3 로그 백업 설정
