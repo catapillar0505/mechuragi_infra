@@ -16,13 +16,26 @@ http {
     include /usr/local/openresty/nginx/conf/mime.types;
     default_type application/octet-stream;
 
+    # JWT Secret 공유 메모리 (환경변수 캐싱)
+    lua_shared_dict env_secrets 128k;
+
+    # 서버 시작 시 환경변수 로드
+    init_by_lua_block {
+        local secret = os.getenv("JWT_SECRET")
+        if secret then
+            ngx.shared.env_secrets:set("jwt_secret", secret)
+        else
+            ngx.log(ngx.ERR, "JWT_SECRET is missing in Environment!")
+        end
+    }
+
     # 로깅 설정
     log_format main '$remote_addr - $remote_user [$time_local] "$request" '
                     '$status $body_bytes_sent "$http_referer" '
                     '"$http_user_agent" "$http_x_forwarded_for"';
 
     access_log /var/log/openresty/access.log main;
-    error_log /var/log/openresty/error.log warn;
+    error_log /var/log/openresty/error.log debug;
 
     sendfile on;
     tcp_nopush on;
@@ -44,7 +57,7 @@ http {
     upstream main_server {
         # 기본값: Blue (8080)
         # Ansible에서 배포 시 동적으로 변경
-        server {{ main_service_private_ip }}:{{ main_server_blue_port }};
+        server {{ main_service_private_ip }}:{{ main_server_active_port }};
     }
 
     # AI 서버 Upstream
@@ -99,15 +112,25 @@ http {
         # ==========================================
         # /recommend 경로: AI 서버로 프록시 (Nginx에서 JWT 검증)
         # ==========================================
-        location /recommend {
+        location /recommend/food {
             # Lua를 이용한 JWT 검증
             access_by_lua_block {
                 local jwt = require "resty.jwt"
                 local cjson = require "cjson"
 
+                -- [DEBUG 1] Lua 블록 진입 확인
+                ngx.log(ngx.WARN, "=== DEBUG: LUA BLOCK START - /recommend/food ===")
+                ngx.log(ngx.WARN, "=== DEBUG: Request URI: ", ngx.var.uri)
+                ngx.log(ngx.WARN, "=== DEBUG: Request Method: ", ngx.var.request_method)
+
                 -- Authorization 헤더에서 JWT 토큰 추출
                 local auth_header = ngx.var.http_authorization
-                if not auth_header then
+
+                -- [DEBUG 2] Authorization 헤더 확인
+                if auth_header then
+                    ngx.log(ngx.WARN, "=== DEBUG: Auth header present, length: ", string.len(auth_header))
+                else
+                    ngx.log(ngx.ERR, "=== DEBUG: AUTH HEADER MISSING ===")
                     ngx.status = 401
                     ngx.say(cjson.encode({error = "Missing Authorization header"}))
                     return ngx.exit(401)
@@ -115,32 +138,48 @@ http {
 
                 -- Bearer 토큰 파싱
                 local token = auth_header:match("Bearer%s+(.+)")
+
+                -- [DEBUG 3] Bearer 토큰 파싱 결과
                 if not token then
+                    ngx.log(ngx.ERR, "=== DEBUG: BEARER TOKEN PARSE FAILED ===")
                     ngx.status = 401
                     ngx.say(cjson.encode({error = "Invalid Authorization format. Expected: Bearer <token>"}))
                     return ngx.exit(401)
+                else
+                    ngx.log(ngx.WARN, "=== DEBUG: Token parsed, length: ", string.len(token))
                 end
 
-                -- JWT Secret 가져오기 (환경 변수)
-                local jwt_secret = os.getenv("JWT_SECRET")
+                -- JWT Secret 가져오기 (공유 메모리에서)
+                local jwt_secret = ngx.shared.env_secrets:get("jwt_secret")
+
+                -- [DEBUG 4] JWT Secret 확인
                 if not jwt_secret then
-                    ngx.log(ngx.ERR, "JWT_SECRET environment variable not set")
+                    ngx.log(ngx.ERR, "=== DEBUG: JWT_SECRET NOT FOUND IN SHARED MEMORY ===")
                     ngx.status = 500
                     ngx.say(cjson.encode({error = "Internal server error"}))
                     return ngx.exit(500)
+                else
+                    ngx.log(ngx.WARN, "=== DEBUG: JWT_SECRET found, length: ", string.len(jwt_secret))
                 end
 
                 -- JWT 검증
+                ngx.log(ngx.WARN, "=== DEBUG: Starting JWT verification ===")
                 local jwt_obj = jwt:verify(jwt_secret, token)
 
+                -- [DEBUG 5] JWT 검증 결과
+                ngx.log(ngx.WARN, "=== DEBUG: JWT verified: ", tostring(jwt_obj.verified))
+                if jwt_obj.reason then
+                    ngx.log(ngx.WARN, "=== DEBUG: JWT reason: ", jwt_obj.reason)
+                end
+
                 if not jwt_obj.verified then
-                    ngx.log(ngx.WARN, "JWT verification failed: ", jwt_obj.reason)
+                    ngx.log(ngx.WARN, "=== DEBUG: JWT VERIFICATION FAILED ===")
                     ngx.status = 401
                     ngx.say(cjson.encode({error = "Invalid or expired token"}))
                     return ngx.exit(401)
                 end
 
-                -- JWT 검증 완료, Authorization 헤더는 그대로 AI 서버로 전달됨
+                ngx.log(ngx.WARN, "=== DEBUG: JWT VALID - Proceeding to AI server ===")
             }
 
             # AI 서버로 프록시
@@ -155,9 +194,6 @@ http {
 
             # Authorization 헤더를 AI 서버로 그대로 전달
             proxy_set_header Authorization $http_authorization;
-
-            # 추가: 모든 http:// 를 https://로 치환 (일반적인 경우)
-            proxy_redirect http:// https://;
 
             # 타임아웃 설정 (AI 응답 시간 고려)
             proxy_connect_timeout 60s;

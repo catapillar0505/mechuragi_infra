@@ -41,13 +41,26 @@
         state: present
 
     # ========================================
-    # lua-resty-jwt 라이브러리 설치
+    # lua-resty-jwt 및 의존성 설치
     # ========================================
     - name: Install lua-resty-jwt dependencies
       apt:
         name:
           - git
         state: present
+
+    - name: Clone lua-resty-hmac repository (jwt 의존성)
+      git:
+        repo: 'https://github.com/jkeys089/lua-resty-hmac.git'
+        dest: /tmp/lua-resty-hmac
+        version: master
+        force: yes
+
+    - name: Install lua-resty-hmac to OpenResty
+      shell: |
+        cp /tmp/lua-resty-hmac/lib/resty/hmac.lua /usr/local/openresty/lualib/resty/
+      args:
+        creates: /usr/local/openresty/lualib/resty/hmac.lua
 
     - name: Clone lua-resty-jwt repository
       git:
