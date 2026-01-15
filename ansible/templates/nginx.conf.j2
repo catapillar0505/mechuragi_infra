@@ -97,9 +97,9 @@ http {
         }
 
         # ==========================================
-        # /recommend/* 경로: AI 서버로 프록시 (Nginx에서 JWT 검증)
+        # /recommend 경로: AI 서버로 프록시 (Nginx에서 JWT 검증)
         # ==========================================
-        location /recommend* {
+        location /recommend {
             # Lua를 이용한 JWT 검증
             access_by_lua_block {
                 local jwt = require "resty.jwt"
@@ -140,16 +140,7 @@ http {
                     return ngx.exit(401)
                 end
 
-                -- payload에서 memberId 추출
-                local member_id = jwt_obj.payload.memberId
-                if not member_id then
-                    ngx.status = 401
-                    ngx.say(cjson.encode({error = "Missing memberId in token"}))
-                    return ngx.exit(401)
-                end
-
-                -- X-Member-Id 헤더 설정 (AI 서버로 전달)
-                ngx.req.set_header("X-Member-Id", tostring(member_id))
+                -- JWT 검증 완료, Authorization 헤더는 그대로 AI 서버로 전달됨
             }
 
             # AI 서버로 프록시
@@ -162,10 +153,11 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
 
+            # Authorization 헤더를 AI 서버로 그대로 전달
+            proxy_set_header Authorization $http_authorization;
+
             # 추가: 모든 http:// 를 https://로 치환 (일반적인 경우)
             proxy_redirect http:// https://;
-
-            # X-Member-Id는 access_by_lua_block에서 설정됨
 
             # 타임아웃 설정 (AI 응답 시간 고려)
             proxy_connect_timeout 60s;
