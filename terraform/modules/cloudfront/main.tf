@@ -74,135 +74,85 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     max_ttl     = 31536000  # 1년
   }
 
-  # 이미지 파일 캐시 동작 (이미지 S3 버킷에서 제공)
+ # [우선순위 0] 이미지 파일 캐시 동작
   ordered_cache_behavior {
     path_pattern           = "/images/*"
+    target_origin_id       = "images-origin"
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "images-origin"
-    compress               = true
     viewer_protocol_policy = "redirect-to-https"
+    compress               = true
 
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-
-    min_ttl     = 86400     # 1일
-    default_ttl = 604800    # 1주일
-    max_ttl     = 31536000  # 1년
+    # Managed-CachingOptimized 적용
+    cache_policy_id = data.aws_cloudfront_cache_policy.optimized.id
   }
 
-  # API 캐시 동작 (Nginx → 메인 서버)
+  # [우선순위 1] API 경로
   ordered_cache_behavior {
     path_pattern           = "/api/*"
+    target_origin_id       = "nginx-gateway-origin"
     allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "nginx-gateway-origin"
-    compress               = false
     viewer_protocol_policy = "redirect-to-https"
+    compress               = false
 
-    forwarded_values {
-      query_string = true
-      headers      = ["Authorization", "Content-Type", "Accept"]
-      cookies {
-        forward = "all"
-      }
-    }
-
-    min_ttl     = 0
-    default_ttl = 0
-    max_ttl     = 0
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.cors_security.id
   }
 
-  # AI 추천 API 캐시 동작 (Nginx → AI 서버)
+  # [우선순위 2] 추천 API 경로
   ordered_cache_behavior {
-    path_pattern           = "/recommend*"
+    path_pattern           = "/recommend/*"
+    target_origin_id       = "nginx-gateway-origin"
     allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "nginx-gateway-origin"
-    compress               = false
     viewer_protocol_policy = "redirect-to-https"
+    compress               = false
 
-    forwarded_values {
-      query_string = true
-      headers      = ["Authorization", "Content-Type", "Accept"]
-      cookies {
-        forward = "all"
-      }
-    }
-
-    min_ttl     = 0  # AI 응답은 개인화되므로 캐싱 비활성화
-    default_ttl = 0
-    max_ttl     = 0
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.cors_security.id
   }
 
-  # OAuth2 로그인 콜백 경로 (EC2 서버로 프록시)
-  ordered_cache_behavior {
-    path_pattern           = "/login/*"
-    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "nginx-gateway-origin"
-    compress               = false
-    viewer_protocol_policy = "redirect-to-https"
-
-    forwarded_values {
-      query_string = true  # OAuth code, state 파라미터 전달
-      headers      = ["Authorization", "Content-Type", "Accept"]
-      cookies {
-        forward = "all"  # 세션 쿠키 전달 필수
-      }
-    }
-
-    min_ttl     = 0  # 로그인은 캐싱 비활성화
-    default_ttl = 0
-    max_ttl     = 0
-  }
-
-  # Swagger UI 경로 (EC2 서버로 프록시)
+  # [우선순위 3] Swagger UI
   ordered_cache_behavior {
     path_pattern           = "/swagger-ui/*"
+    target_origin_id       = "nginx-gateway-origin"
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "nginx-gateway-origin"
-    compress               = false
     viewer_protocol_policy = "redirect-to-https"
+    compress               = false
 
-    forwarded_values {
-      query_string = true  # Swagger UI 쿼리 파라미터 전달
-      headers      = ["Authorization", "Content-Type", "Accept"]
-      cookies {
-        forward = "all"  # 인증 쿠키 전달
-      }
-    }
-
-    min_ttl     = 0  # Swagger는 캐싱 비활성화
-    default_ttl = 0
-    max_ttl     = 0
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.cors_security.id
   }
 
-  # Swagger API Docs 경로 (OpenAPI 스펙)
+  # [우선순위 4] Swagger API Docs
   ordered_cache_behavior {
     path_pattern           = "/v3/api-docs*"
+    target_origin_id       = "nginx-gateway-origin"
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "nginx-gateway-origin"
-    compress               = false
     viewer_protocol_policy = "redirect-to-https"
+    compress               = false
 
-    forwarded_values {
-      query_string = true
-      headers      = ["Authorization", "Content-Type", "Accept"]
-      cookies {
-        forward = "all"
-      }
-    }
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.cors_security.id
+  }
 
-    min_ttl     = 0
-    default_ttl = 0
-    max_ttl     = 0
+  # [우선순위 5 - Default] 기본값 (*) 프론트엔드 S3
+  default_cache_behavior {
+    target_origin_id       = "frontend-origin"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    # Managed-CachingOptimized 적용
+    cache_policy_id = data.aws_cloudfront_cache_policy.optimized.id
   }
 
   # SPA를 위한 커스텀 오류 응답 (403, 404 발생 시 index.html로 리디렉션)
