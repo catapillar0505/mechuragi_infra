@@ -40,4 +40,9 @@ resource "aws_ses_event_destination" "cloudwatch" {
   }
 }
 
+# Account-level Suppression List (자동으로 bounce/complaint 이메일 차단)
+resource "aws_sesv2_account_suppression_attributes" "main" {
+  suppressed_reasons = ["BOUNCE", "COMPLAINT"]
+}
+
 data "aws_caller_identity" "current" {}
