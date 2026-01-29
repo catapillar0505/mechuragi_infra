@@ -40,32 +40,4 @@ resource "aws_ses_event_destination" "cloudwatch" {
   }
 }
 
-# SES Email Template - Welcome Email
-resource "aws_ses_template" "welcome_email" {
-  name    = "${var.project_name}-welcome-email"
-  subject = "{{project_name}}에 오신 것을 환영합니다! 🎉"
-  
-  html = templatefile("${path.module}/templates/welcome_email.html", {
-    project_name = var.project_name
-  })
-  
-  text = templatefile("${path.module}/templates/welcome_email.txt", {
-    project_name = var.project_name
-  })
-}
-
-# SES Email Template - Password Reset
-resource "aws_ses_template" "password_reset" {
-  name    = "${var.project_name}-password-reset"
-  subject = "{{project_name}} 비밀번호 재설정 요청"
-  
-  html = templatefile("${path.module}/templates/password_reset.html", {
-    project_name = var.project_name
-  })
-  
-  text = templatefile("${path.module}/templates/password_reset.txt", {
-    project_name = var.project_name
-  })
-}
-
 data "aws_caller_identity" "current" {}
