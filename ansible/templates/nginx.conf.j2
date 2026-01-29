@@ -78,7 +78,15 @@ http {
         # ==========================================
         location /api/ {
             proxy_pass http://main_server;
-            proxy_http_version 1.1;
+            proxy_http_version 1.1;  # SSE는 HTTP/1.1 이상 필수
+
+            # [필수] SSE 스트리밍 지연 방지
+            proxy_buffering off;             # Nginx 버퍼에 데이터가 쌓이지 않도록 즉시 전송
+            proxy_cache off;                 # 실시간성 보장을 위해 캐싱 비활성화
+            chunked_transfer_encoding on;    # 대용량/스트리밍 응답을 위한 청크 전송 활성화
+
+            # [필수] SSE 연결 유지 (웹소켓 Upgrade 설정 제거)
+            proxy_set_header Connection '';
 
             # 프록시 헤더 설정
             proxy_set_header Host $host;
@@ -86,14 +94,11 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
 
-            # WebSocket 지원
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-
-            # 타임아웃 설정
+            # [타임아웃] t3.small 환경 및 SSE 유지 고려
+            # 60초마다 heartbeat를 보낸다면 300초 정도가 적당합니다.
             proxy_connect_timeout 60s;
             proxy_send_timeout 60s;
-            proxy_read_timeout 60s;
+            proxy_read_timeout 300s;
         }
 
         # ==========================================
@@ -182,9 +187,17 @@ http {
                 ngx.log(ngx.WARN, "=== DEBUG: JWT VALID - Proceeding to AI server ===")
             }
 
+            # SSE 스트리밍을 위한 설정 추가
+            proxy_buffering off;             # 응답 버퍼링 비활성화 (실시간 전송 필수)
+            proxy_cache off;                 # 캐싱 비활성화
+            chunked_transfer_encoding on;    # 청크 단위 전송 활성화
+
+            # SSE 연결 유지를 위한 헤더
+            proxy_set_header Connection '';
+            proxy_http_version 1.1;          # SSE는 HTTP 1.1 이상 권장
+
             # AI 서버로 프록시
             proxy_pass http://ai_server;
-            proxy_http_version 1.1;
 
             # 프록시 헤더 설정
             proxy_set_header Host $host;
@@ -195,31 +208,37 @@ http {
             # Authorization 헤더를 AI 서버로 그대로 전달
             proxy_set_header Authorization $http_authorization;
 
-            # 타임아웃 설정 (AI 응답 시간 고려)
+            #타임아웃 설정 (AI 생성 시간이 길 수 있으므로 넉넉하게 유지)
             proxy_connect_timeout 60s;
             proxy_send_timeout 120s;
-            proxy_read_timeout 120s;
+            proxy_read_timeout 300s;         # SSE 연결이 끊기지 않도록 충분히 설정
         }
 
         # ==========================================
         # 루트 경로: 메인 서버로 프록시
         # ==========================================
         location / {
-            proxy_pass http://main_server;
+           proxy_pass http://main_server;
             proxy_http_version 1.1;
 
+            # 프록시 헤더 설정
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
 
-            # WebSocket 지원
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
+            # [수정] 웹소켓 지원 제거 (기존 Upgrade, Connection "upgrade" 삭제)
+            # SSE 및 일반 HTTP 유지를 위해 Connection 헤더 초기화
+            proxy_set_header Connection "";
 
+            # [추가] 스트리밍 지원 (루트 경로를 통한 SSE 호출 대비)
+            proxy_buffering off;
+            proxy_cache off;
+
+            # [타임아웃] 메인 서버의 SSE와 일반 요청을 고려한 설정
             proxy_connect_timeout 60s;
             proxy_send_timeout 60s;
-            proxy_read_timeout 60s;
+            proxy_read_timeout 300s; # SSE 연결 유지를 위해 5분으로 상향
         }
 
         # ==========================================
