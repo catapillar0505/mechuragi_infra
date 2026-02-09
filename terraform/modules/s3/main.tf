@@ -89,7 +89,8 @@ resource "aws_s3_bucket_cors_configuration" "images_bucket_cors" {
     allowed_methods = ["GET", "POST", "PUT"]
     allowed_origins = [
       "https://*.cloudfront.net",  # CloudFront 도메인
-      "https://mechuragi.kro.kr",   # 실제 서비스 도메인
+      "https://mechuragi.site",     # 실제 서비스 도메인 (신규)
+      "https://mechuragi.kro.kr",   # 실제 서비스 도메인 (기존)
       "http://localhost:3000",      # React 개발 서버
       "http://localhost:8080"       # Spring Boot 개발 서버
     ]
