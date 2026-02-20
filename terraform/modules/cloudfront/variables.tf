@@ -62,7 +62,7 @@ variable "s3_bucket_arn" {
 variable "web_domain" {
   description = "Domain for web (deprecated - use main_service_public_dns instead)"
   type        = string
-  default     = "mechuragi.kro.kr"
+  default     = "mechuragi.site"
 }
 
 variable "nginx_gateway_public_dns" {
