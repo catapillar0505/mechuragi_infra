@@ -36,7 +36,32 @@ resource "aws_cloudfront_origin_access_control" "images_oac" {
   signing_protocol                  = "sigv4"
 }
 
-# 3. CloudFront Distribution
+# 3. CloudFront Function (SPA URL Rewrite)
+resource "aws_cloudfront_function" "spa_url_rewrite" {
+  name    = "AddIndexHtml"
+  runtime = "cloudfront-js-2.0"
+  publish = true
+
+  code = <<-EOT
+        function handler(event) {
+            var request = event.request;
+            var uri = request.uri;
+
+            // 1. URL이 '/'로 끝나는 경우 index.html 추가
+            if (uri.endsWith('/')) {
+                request.uri += 'index.html';
+            }
+            // 2. 파일 확장자가 없는 경로(예: /oauth2/callback)에 index.html 추가
+            else if (!uri.includes('.')) {
+                request.uri += '/index.html';
+            }
+
+            return request;
+        }
+  EOT
+}
+
+# 4. CloudFront Distribution
 resource "aws_cloudfront_distribution" "main_distribution" {
   enabled             = true
   is_ipv6_enabled     = true
@@ -101,6 +126,11 @@ resource "aws_cloudfront_distribution" "main_distribution" {
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
     cache_policy_id = data.aws_cloudfront_cache_policy.disabled.id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_url_rewrite.arn
+    }
   }
 
   # [3] /images/*

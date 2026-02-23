@@ -49,7 +49,7 @@ resource "aws_instance" "main_service" {
   }
 
   lifecycle {
-    ignore_changes = [network_interface]
+    ignore_changes = [ami, network_interface]
   }
 
   tags = {
@@ -88,7 +88,7 @@ resource "aws_instance" "ai_service" {
   }
 
   lifecycle {
-    ignore_changes = [network_interface]
+    ignore_changes = [ami, network_interface]
   }
 
   tags = {
@@ -140,7 +140,7 @@ resource "aws_instance" "nginx_gateway" {
   }
 
   lifecycle {
-    ignore_changes = [network_interface]
+    ignore_changes = [ami, network_interface]
   }
 
   user_data = <<-EOF
