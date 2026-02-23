@@ -2,6 +2,9 @@
 
 메추라기 프로젝트의 AWS 인프라 저장소입니다. Terraform(IaC)과 Ansible(Configuration Management)을 사용하여 3개 서버 기반의 통합 마이크로서비스 환경을 구성합니다.
 
+- [Terraform 가이드](terraform/README.md): 모듈별 상세 설정
+- [Ansible 가이드](ansible/README.md): 서버 구성 실행 설정
+
 ## 아키텍처 개요
 
 ```
@@ -230,10 +233,6 @@ aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"
 | Nginx 로컬 | 30일 (logrotate + cron 자동 삭제) |
 
 ## 문서
-
-### 인프라 가이드
-- [Terraform 가이드](terraform/README.md): 모듈별 상세 설정
-- [Ansible 가이드](ansible/README.md): 서버 구성 실행 방법
 
 ### 트러블슈팅
 - [IaC Drift 해결](docs/Iac-drift-troubleShooting.md)
