@@ -1,3 +1,83 @@
+<div align="center">
+
+# 🏗️ 메추라기 — Infrastructure
+
+### Claude AI 기반 메뉴 추천 커뮤니티 플랫폼의 AWS 인프라 (IaC)
+
+**Terraform + Ansible로 3개 서버 기반 마이크로서비스 환경 전체를 코드로 구축·운영합니다.**
+
+![Award](https://img.shields.io/badge/Programming%20GURU%20해커톤-Android%20부문%20대상%20🏆-gold?style=flat)
+![AWS](https://img.shields.io/badge/AWS-232F3E?style=flat&logo=amazonwebservices&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-844FBA?style=flat&logo=terraform&logoColor=white)
+![Ansible](https://img.shields.io/badge/Ansible-EE0000?style=flat&logo=ansible&logoColor=white)
+![OpenResty](https://img.shields.io/badge/OpenResty%20·%20Lua%20JWT-00A9A5?style=flat&logo=nginx&logoColor=white)
+![k6](https://img.shields.io/badge/k6%20부하%20테스트-7D64FF?style=flat&logo=k6&logoColor=white)
+
+🌐 **서비스**: [mechuragi.site](https://mechuragi.site) · 📹 **시연 영상**: [YouTube Shorts](https://youtube.com/shorts/QZbuvk-MRn8?feature=share)
+
+> 이 저장소는 [teamMechuragi/mechuragi_infra](https://github.com/teamMechuragi/mechuragi_infra)의 포크입니다.
+> 인프라는 팀 내에서 **김진아([@catapillar0505](https://github.com/catapillar0505))가 단독 설계·구축**했으며,
+> 원본 저장소의 **머지 PR 8개 전부(기여 100%)**를 작성했습니다.
+
+</div>
+
+---
+
+## 🏆 수상
+
+> ### Programming GURU 해커톤 **Android 부문 대상**
+> 서울여자대학교 · 팀 Mechuragi · **2024.02**
+
+---
+
+## 🏗️ 아키텍처 구조도
+
+<p align="center">
+  <img src="./docs/images/architecture.png" width="820"/>
+</p>
+
+---
+
+## 🙋 나의 역할 — 인프라 전 구간 단독 담당
+
+- **Terraform**으로 AWS 인프라 아키텍처 설계 및 구축 — VPC · EC2 · S3 · CloudFront · ACM · SES · IAM (10개 모듈)
+- **Ansible** 플레이북으로 서버 구성 자동화 — OpenResty, Docker, CloudWatch Agent, 로그 백업
+- **OpenResty + Lua JWT 인증 게이트웨이** 구현 — 리버스 프록시 · Bastion · NAT 인스턴스를 1대로 통합
+- **k6 부하 테스트**로 게이트웨이 라우팅 구조(Direct vs Legacy)를 정량 검증 후 채택
+- 비용 최적화 — NAT Gateway 제거(월 $40-50 절감), EIP 4→1개, 인스턴스 통합
+- SES 이메일(도메인 검증·DKIM·bounce 처리), SSE 스트리밍 프록시 설정, IaC 드리프트 해결 ([#7](https://github.com/teamMechuragi/mechuragi_infra/pull/7), [#8](https://github.com/teamMechuragi/mechuragi_infra/pull/8), [#9](https://github.com/teamMechuragi/mechuragi_infra/pull/9))
+
+---
+
+## 🛠️ 트러블슈팅 하이라이트
+
+### 1. k6 부하 테스트 — 게이트웨이 직행(Direct) 구조 채택 근거
+
+AI 추천 요청이 Main Server(Spring Security JWT)를 경유하는 Legacy 구조와, OpenResty에서 **Lua로 JWT를 검증하고 AI 서버로 직행**하는 Direct 구조를 k6로 비교했습니다. (VU 50 × 60초, Bedrock Mock 3,200ms, Tomcat 스레드 32개 제한)
+
+| 지표 | Direct | Legacy | 차이 |
+|------|--------|--------|------|
+| avg | 3,231ms | 5,033ms | **+56%** |
+| p95 | 3,545ms | 6,470ms | **+82%** |
+| 처리량 (60s) | 285건 | 195건 | **-32%** |
+
+Legacy는 Main → AI 동기 블로킹 호출로 두 서버의 스레드 풀이 동시에 소진되는 구조적 병목이 확인됐고, Lua 인증 오버헤드(~5ms)는 무시 가능한 수준 → **처리량 +32%, p95 -45%**의 Direct Path를 채택했습니다. ([상세 분석](https://github.com/catapillar0505/mechuragi_main_server#2-k6-부하-테스트로-증명한-게이트웨이-구조-개선--direct-vs-legacy-97))
+
+### 2. 운영하며 남긴 트러블슈팅 문서 6편
+
+발생한 문제를 그때그때 문서로 남겼습니다. 각 문서는 증상 → 원인 → 해결 → 재발 방지 구조입니다.
+
+| 문서 | 내용 |
+|------|------|
+| [IaC Drift 해결](docs/Iac-drift-troubleShooting.md) | 콘솔 수동 변경으로 발생한 Terraform 상태 불일치 해소 ([#9](https://github.com/teamMechuragi/mechuragi_infra/pull/9)) |
+| [CloudFront 403 오류](docs/cloudfront-403-troubleshooting.md) | OAC·SPA 라우팅 조합에서의 403 원인 분석 |
+| [VPC 내부 연결성](docs/vpc-internal-connectivity.md) | Private Subnet 서버 간 통신 문제 해결 ([#2](https://github.com/teamMechuragi/mechuragi_infra/pull/2), [#3](https://github.com/teamMechuragi/mechuragi_infra/pull/3)) |
+| [SSH 터널링](docs/ssh-tunnel-troubleShooting.md) | Bastion 경유 접속 구성 |
+| [이메일 서비스](docs/email-troubleShooting.md) | SES 도메인 검증·bounce 이슈 |
+| [일반 트러블슈팅](docs/troubleshooting-guide.md) | 그 외 운영 이슈 모음 |
+
+---
+
 # Mechuragi Infrastructure
 
 메추라기 프로젝트의 AWS 인프라 저장소입니다. Terraform(IaC)과 Ansible(Configuration Management)을 사용하여 3개 서버 기반의 통합 마이크로서비스 환경을 구성합니다.
@@ -245,3 +325,12 @@ aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"
 ### 기타
 - [도메인 설정](docs/domain.md)
 - [리팩토링 계획](docs/refactoring-plan.md)
+
+---
+
+## 관련 저장소
+
+- 🐦 [mechuragi_main_server (포크)](https://github.com/catapillar0505/mechuragi_main_server) — Spring Boot 메인 백엔드 (전체 기여 요약 포함)
+- 🤖 [mechuragi_ai_server (포크)](https://github.com/catapillar0505/mechuragi_ai_server) — AWS Bedrock Claude 추천 엔진
+- 💻 [mechuragi_client (포크)](https://github.com/catapillar0505/mechuragi_client) — Next.js 웹 클라이언트
+- 🏗️ [팀 원본 저장소](https://github.com/teamMechuragi/mechuragi_infra)
