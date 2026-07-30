@@ -13,7 +13,7 @@
 ![OpenResty](https://img.shields.io/badge/OpenResty%20·%20Lua%20JWT-00A9A5?style=flat&logo=nginx&logoColor=white)
 ![k6](https://img.shields.io/badge/k6%20부하%20테스트-7D64FF?style=flat&logo=k6&logoColor=white)
 
-🌐 **서비스**: [mechuragi.site](https://mechuragi.site) · 📹 **시연 영상**: [YouTube Shorts](https://youtube.com/shorts/QZbuvk-MRn8?feature=share)
+📹 **시연 영상**: [YouTube Shorts](https://youtube.com/shorts/QZbuvk-MRn8?feature=share)
 
 > 이 저장소는 [teamMechuragi/mechuragi_infra](https://github.com/teamMechuragi/mechuragi_infra)의 포크입니다.
 > 인프라는 팀 내에서 **김진아([@catapillar0505](https://github.com/catapillar0505))가 단독 설계·구축**했으며,
