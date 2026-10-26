@@ -55,13 +55,13 @@
 
 AI 추천 요청이 Main Server(Spring Security JWT)를 경유하는 Legacy 구조와, OpenResty에서 **Lua로 JWT를 검증하고 AI 서버로 직행**하는 Direct 구조를 k6로 비교했습니다. (VU 50 × 60초, Bedrock Mock 3,200ms, Tomcat 스레드 32개 제한)
 
-| 지표 | Direct | Legacy | 차이 |
+| 지표 | Legacy | Direct | 변화 (Direct 기준) |
 |------|--------|--------|------|
-| avg | 3,231ms | 5,033ms | **+56%** |
-| p95 | 3,545ms | 6,470ms | **+82%** |
-| 처리량 (60s) | 285건 | 195건 | **-32%** |
+| avg | 5,033ms | 3,231ms | **-36%** |
+| p95 | 6,470ms | 3,545ms | **-45%** |
+| 처리량 (60s) | 195건 | 285건 | **+46%** |
 
-Legacy는 Main → AI 동기 블로킹 호출로 두 서버의 스레드 풀이 동시에 소진되는 구조적 병목이 확인됐고, Lua 인증 오버헤드(~5ms)는 무시 가능한 수준 → **처리량 +32%, p95 -45%**의 Direct Path를 채택했습니다. ([상세 분석](https://github.com/catapillar0505/mechuragi_main_server#2-k6-부하-테스트로-증명한-게이트웨이-구조-개선--direct-vs-legacy-97))
+Legacy는 인증 때문에 AI 요청도 메인 서버를 한 번 더 거치는 구조(홉 +1)였고, 긴 AI 요청과 짧은 일반 API가 같은 경로를 써서 무관한 API까지 함께 느려졌습니다. CloudFront `/recommend/*` 분리 + OpenResty Lua JWT 검증으로 AI 서버에 바로 보내도록 경로를 줄였고(Lua 인증 약 5ms), **처리량 +46%, p95 -45%**를 확인해 Direct Path를 채택했습니다. ([상세 분석](https://github.com/catapillar0505/mechuragi_main_server#2-k6-부하-테스트로-증명한-게이트웨이-구조-개선--direct-vs-legacy-97))
 
 ### 2. 운영하며 남긴 트러블슈팅 문서 6편
 
